@@ -137,7 +137,7 @@ spec:
         hosts:
           - yugabyte.suncoast.systems  # <-- Change to your domain
         paths:
-          - /yugabyte-gui
+          - /*
       backends:
         - serviceName: yb-master-service  # Directly target pod 0 for GUI
           servicePort: 7000
