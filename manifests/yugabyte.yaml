@@ -133,7 +133,7 @@ metadata:
 spec:
   ingressClassName: apisix
   http:
-    - name: gui-route
+    - name: yugabyte-gui
       match:
         hosts:
           - yugabyte.suncoast.systems  # <-- Change to your domain
