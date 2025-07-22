@@ -237,3 +237,158 @@ spec:
       backends:
         - serviceName: oauth2-proxy-yugabyte
           servicePort: 4180
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: pgweb
+  namespace: yugabyte
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: pgweb
+  template:
+    metadata:
+      labels:
+        app: pgweb
+    spec:
+      containers:
+        - name: pgweb
+          image: sosedoff/pgweb
+          args:
+            - --bind=0.0.0.0
+            - --listen=8081
+            - --host=yb-tserver-service.yugabyte.svc.cluster.local
+            - --port=5433
+            - --user=yugabyte
+            - --dbname=yugabyte
+          ports:
+            - containerPort: 8081
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: pgweb
+  namespace: yugabyte
+spec:
+  selector:
+    app: pgweb
+  ports:
+    - port: 8081
+      targetPort: 8081
+      protocol: TCP
+      name: http
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy-pgweb
+  namespace: yugabyte
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+      component: pgweb
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy
+        component: pgweb
+    spec:
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+          args:
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://pgweb.yugabyte.svc.cluster.local:8081
+            - --provider=github
+            - --email-domain=*
+            - --client-id=$(OAUTH2_CLIENT_ID)
+            - --client-secret=$(OAUTH2_CLIENT_SECRET)
+            - --cookie-secret=$(OAUTH2_COOKIE_SECRET)
+            - --redirect-url=https://yugabyte.suncoast.systems/pgweb/oauth2/callback
+            - --scope=user:email,read:org
+            - --cookie-secure=true
+            - --allowed-group=dotcomrow:pgweb_users
+          env:
+            - name: OAUTH2_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: pgweb-oauth2-proxy-creds
+                  key: client-id
+            - name: OAUTH2_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: pgweb-oauth2-proxy-creds
+                  key: client-secret
+            - name: OAUTH2_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: pgweb-oauth2-proxy-creds
+                  key: cookie-secret
+          ports:
+            - containerPort: 4180
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy-pgweb
+  namespace: yugabyte
+spec:
+  selector:
+    app: oauth2-proxy
+    component: pgweb
+  ports:
+    - port: 4180
+      targetPort: 4180
+      name: http
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: pgweb
+  namespace: yugabyte
+spec:
+  ingressClassName: apisix
+  http:
+    - name: pgweb-route
+      match:
+        hosts:
+          - pgweb.suncoast.systems
+        paths:
+          - /*
+      backends:
+        - serviceName: oauth2-proxy-pgweb
+          servicePort: 4180
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri: ["^/pgweb(/.*)?$", "/$1"]
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: pgweb-oauth2-proxy-creds
+  namespace: yugabyte
+type: Opaque
+stringData:
+  client-id: "<path:secret/data/pgweb-oauth2-client-id#value>"
+  client-secret: "<path:secret/data/pgweb-oauth2-client-secret#value>"
+  cookie-secret: "<path:secret/data/pgweb-oauth2-cookie-secret#value>"
