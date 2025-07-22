@@ -1,0 +1,126 @@
+---
+# YugabyteDB Master StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: yb-master
+  namespace: yugabyte
+  labels:
+    app: yugabyte
+spec:
+  serviceName: yb-master-service
+  replicas: 3
+  selector:
+    matchLabels:
+      app: yugabyte
+      component: yb-master
+  template:
+    metadata:
+      labels:
+        app: yugabyte
+        component: yb-master
+    spec:
+      containers:
+      - name: yb-master
+        image: yugabytedb/yugabyte:latest
+        command: ["/home/yugabyte/bin/yb-master"]
+        args:
+          - "--fs_data_dirs=/mnt/data"
+          - "--master_addresses=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
+          - "--rpc_bind_addresses=$(POD_IP):7100"
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 7000
+        - containerPort: 7100
+        volumeMounts:
+        - name: yb-master-data
+          mountPath: /mnt/data
+      volumes:
+      - name: yb-master-data
+        emptyDir: {}
+---
+# YugabyteDB Master Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: yb-master-service
+  namespace: yugabyte
+  labels:
+    app: yugabyte
+spec:
+  ports:
+  - port: 7000
+    name: http
+  - port: 7100
+    name: rpc
+  clusterIP: None
+  selector:
+    app: yugabyte
+    component: yb-master
+---
+# YugabyteDB TServer StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: yb-tserver
+  namespace: yugabyte
+  labels:
+    app: yugabyte
+spec:
+  serviceName: yb-tserver-service
+  replicas: 3
+  selector:
+    matchLabels:
+      app: yugabyte
+      component: yb-tserver
+  template:
+    metadata:
+      labels:
+        app: yugabyte
+        component: yb-tserver
+    spec:
+      containers:
+      - name: yb-tserver
+        image: yugabytedb/yugabyte:latest
+        command: ["/home/yugabyte/bin/yb-tserver"]
+        args:
+          - "--fs_data_dirs=/mnt/data"
+          - "--tserver_master_addrs=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
+          - "--rpc_bind_addresses=$(POD_IP):9100"
+        env:
+        - name: POD_IP
+          valueFrom:
+            fieldRef:
+              fieldPath: status.podIP
+        ports:
+        - containerPort: 9000
+        - containerPort: 9100
+        volumeMounts:
+        - name: yb-tserver-data
+          mountPath: /mnt/data
+      volumes:
+      - name: yb-tserver-data
+        emptyDir: {}
+---
+# YugabyteDB TServer Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: yb-tserver-service
+  namespace: yugabyte
+  labels:
+    app: yugabyte
+spec:
+  ports:
+  - port: 9000
+    name: http
+  - port: 9100
+    name: rpc
+  clusterIP: None
+  selector:
+    app: yugabyte
+    component: yb-tserver
