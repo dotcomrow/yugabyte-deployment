@@ -140,5 +140,5 @@ spec:
         paths:
           - /yugabyte-gui
       backends:
-        - serviceName: yb-master-0.yb-master-service  # Directly target pod 0 for GUI
+        - serviceName: yb-master-service  # Directly target pod 0 for GUI
           servicePort: 7000
