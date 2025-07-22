@@ -131,6 +131,7 @@ metadata:
   name: yugabyte-gui
   namespace: yugabyte
 spec:
+  ingressClassName: apisix
   http:
     - name: gui-route
       match:
@@ -138,6 +139,6 @@ spec:
           - yugabyte.suncoast.systems  # <-- Change to your domain
         paths:
           - /yugabyte-gui
-      backend:
-        serviceName: yb-master-0.yb-master-service  # Directly target pod 0 for GUI
-        servicePort: 7000
+      backends:
+        - serviceName: yb-master-0.yb-master-service  # Directly target pod 0 for GUI
+          servicePort: 7000
