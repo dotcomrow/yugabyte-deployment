@@ -52,6 +52,8 @@ metadata:
   labels:
     app: yugabyte
 spec:
+  selector:
+    statefulset.kubernetes.io/pod-name: yb-master-0
   ports:
   - port: 7000
     name: http
@@ -142,3 +144,8 @@ spec:
       backends:
         - serviceName: yb-master-service  # Directly target pod 0 for GUI
           servicePort: 7000
+      plugins:
+        - name: proxy-rewrite
+          enable: true
+          config:
+            regex_uri: ["^/yugabyte-gui(/.*)?$", "/$1"]
