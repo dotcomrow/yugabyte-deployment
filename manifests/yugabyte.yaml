@@ -124,6 +124,75 @@ spec:
     app: yugabyte
     component: yb-tserver
 ---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: oauth2-proxy-creds
+  namespace: yugabyte
+type: Opaque
+stringData:
+  client-id: "<path:secret/data/yugabyte-deployment-oauth2-client-id#value>"
+  client-secret: "<path:secret/data/yugabyte-deployment-oauth2-client-secret#value>"
+  cookie-secret: "<path:secret/data/yugabyte-deployment-oauth2-cookie-secret#value>"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: oauth2-proxy-yugabyte
+  namespace: yugabyte
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: oauth2-proxy
+      component: yugabyte-gui
+  template:
+    metadata:
+      labels:
+        app: oauth2-proxy
+        component: yugabyte-gui
+    spec:
+      containers:
+        - name: oauth2-proxy
+          image: quay.io/oauth2-proxy/oauth2-proxy:v7.6.0
+          args:
+            - --http-address=0.0.0.0:4180
+            - --upstream=http://yb-master-service.yugabyte.svc.cluster.local:7000
+            - --provider=github  # Or github, oidc, etc.
+            - --email-domain=*
+            - --client-id=$(OAUTH2_CLIENT_ID)
+            - --client-secret=$(OAUTH2_CLIENT_SECRET)
+            - --cookie-secret=$(OAUTH2_COOKIE_SECRET)
+            - --redirect-url=https://yugabyte.suncoast.systems/oauth2/callback
+            - --scope=user:email,read:org
+            - --cookie-secure=true
+            - --allowed-group=dotcomrow:yugabyte_gui_users
+          env:
+            - name: OAUTH2_CLIENT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-creds
+                  key: client-id
+            - name: OAUTH2_CLIENT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-creds
+                  key: client-secret
+            - name: OAUTH2_COOKIE_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: oauth2-proxy-creds
+                  key: cookie-secret
+          ports:
+            - containerPort: 4180
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+---
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
@@ -135,14 +204,9 @@ spec:
     - name: yugabyte-gui
       match:
         hosts:
-          - yugabyte.suncoast.systems  # <-- Change to your domain
+          - yugabyte.suncoast.systems
         paths:
-          - /*
+          - /
       backends:
-        - serviceName: yb-master-service  # Directly target pod 0 for GUI
-          servicePort: 7000
-      plugins:
-        - name: proxy-rewrite
-          enable: true
-          config:
-            regex_uri: ["^/yugabyte-gui(/.*)?$", "/$1"]
+        - serviceName: oauth2-proxy-yugabyte
+          servicePort: 4180
