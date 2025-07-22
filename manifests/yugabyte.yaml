@@ -221,7 +221,7 @@ spec:
         hosts:
           - yugabyte.suncoast.systems
         paths:
-          - /
+          - /*
       backends:
         - serviceName: oauth2-proxy-yugabyte
           servicePort: 4180
