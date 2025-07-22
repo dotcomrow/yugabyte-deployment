@@ -193,6 +193,21 @@ spec:
               cpu: 500m
               memory: 256Mi
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: oauth2-proxy-yugabyte
+  namespace: yugabyte
+spec:
+  selector:
+    app: oauth2-proxy
+    component: yugabyte-gui
+  ports:
+    - port: 4180
+      targetPort: 4180
+      protocol: TCP
+      name: http
+---
 apiVersion: apisix.apache.org/v2
 kind: ApisixRoute
 metadata:
