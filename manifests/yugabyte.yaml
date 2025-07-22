@@ -124,3 +124,20 @@ spec:
   selector:
     app: yugabyte
     component: yb-tserver
+---
+apiVersion: apisix.apache.org/v2
+kind: ApisixRoute
+metadata:
+  name: yugabyte-gui
+  namespace: yugabyte
+spec:
+  http:
+    - name: gui-route
+      match:
+        hosts:
+          - yugabyte.suncoast.systems  # <-- Change to your domain
+        paths:
+          - /yugabyte-gui
+      backend:
+        serviceName: yb-master-0.yb-master-service  # Directly target pod 0 for GUI
+        servicePort: 7000
