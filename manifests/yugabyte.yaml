@@ -52,8 +52,6 @@ metadata:
   labels:
     app: yugabyte
 spec:
-  selector:
-    statefulset.kubernetes.io/pod-name: yb-master-0
   ports:
   - port: 7000
     name: http
@@ -62,7 +60,7 @@ spec:
   clusterIP: None
   selector:
     app: yugabyte
-    component: yb-master
+    component: yb-master-0
 ---
 # YugabyteDB TServer StatefulSet
 apiVersion: apps/v1
