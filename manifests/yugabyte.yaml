@@ -57,10 +57,9 @@ spec:
     name: http
   - port: 7100
     name: rpc
-  clusterIP: None
   selector:
     app: yugabyte
-    component: yb-master-0
+    component: yb-master
 ---
 # YugabyteDB TServer StatefulSet
 apiVersion: apps/v1
