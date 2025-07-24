@@ -79,7 +79,7 @@ spec:
       containers:
         - name: create-user
           image: hashicorp/vault:1.14.3
-          command: ["/bin/bash", "-c"]
+          command: ["/bin/sh", "-c"]
           args:
             - |
               echo "🔐 Configuring Vault DB secrets engine..."
