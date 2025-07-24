@@ -65,6 +65,9 @@ spec:
         - name: shared-creds
           persistentVolumeClaim:
             claimName: vault-creds-pvc
+        - name: root-token
+          secret:
+            secretName: vault-root-token
 
       initContainers:
         - name: inject-vault
@@ -87,23 +90,26 @@ spec:
 
               apk add --no-cache jq
 
-              # Enable DB engine at path yugabyte-db
-              VAULT_TOKEN="$(jq -r '.root_token' /vault/data/init.json)" vault secrets enable -path=yugabyte-db database
+              VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
+              export VAULT_TOKEN
 
-              VAULT_TOKEN="$(jq -r '.root_token' /vault/data/init.json)" vault write yugabyte-db/config/yugabyte \
+              # Enable DB engine at path yugabyte-db
+              vault secrets enable -path=yugabyte-db database
+
+              vault write yugabyte-db/config/yugabyte \
                 plugin_name=postgresql-database-plugin \
                 allowed_roles="readonly,readwrite,admin" \
                 connection_url="postgresql://{{username}}:{{password}}@yb-tserver-service.yugabyte.svc.cluster.local:5433/yugabyte?sslmode=disable" \
                 username="vaultadmin" \
                 password="$STRONG_PWD"
 
-              VAULT_TOKEN="$(jq -r '.root_token' /vault/data/init.json)" vault write yugabyte-db/roles/readonly \
+              vault write yugabyte-db/roles/readonly \
                 db_name=yugabyte \
                 creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT CONNECT ON DATABASE yugabyte TO \"{{name}}\"; GRANT USAGE ON SCHEMA public TO \"{{name}}\"; GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
                 default_ttl="1h" \
                 max_ttl="24h"
 
-              VAULT_TOKEN="$(jq -r '.root_token' /vault/data/init.json)" vault write yugabyte-db/roles/readwrite \
+              vault write yugabyte-db/roles/readwrite \
                 db_name=yugabyte \
                 creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT CONNECT ON DATABASE yugabyte TO \"{{name}}\"; GRANT USAGE ON SCHEMA public TO \"{{name}}\"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
                 default_ttl="1h" \
@@ -121,6 +127,9 @@ spec:
               mountPath: /vault-bin
             - name: shared-creds
               mountPath: /shared-creds
+            - name: root-token
+              mountPath: /vault-token
+              readOnly: true
 ---
 # YugabyteDB Master Service
 apiVersion: v1
