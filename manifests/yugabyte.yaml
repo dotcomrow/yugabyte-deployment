@@ -126,11 +126,11 @@ spec:
 
               # ✅ Create vaultadmin's personal DB
               echo "📦 Checking if 'vaultadmin' database exists..."
-              EXISTS=$(ysqlsh -h $PGHOST -p $PGPORT -U vaultadmin -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='vaultadmin'")
+              EXISTS=$(ysqlsh -h $PGHOST -p $PGPORT -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='vaultadmin'")
 
               if [ "$EXISTS" != "1" ]; then
                 echo "📦 Creating 'vaultadmin' database..."
-                ysqlsh -h $PGHOST -p $PGPORT -U vaultadmin -d yugabyte -c "CREATE DATABASE vaultadmin"
+                ysqlsh -h $PGHOST -p $PGPORT -U yugabyte -d yugabyte -c "CREATE DATABASE vaultadmin"
               else
                 echo "✅ Database 'vaultadmin' already exists."
               fi
