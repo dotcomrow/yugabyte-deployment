@@ -126,7 +126,15 @@ spec:
 
               # ✅ Create vaultadmin's personal DB
               echo "📦 Creating 'vaultadmin' database if it doesn't exist..."
-              createdb -h $PGHOST -p $PGPORT -U vaultadmin vaultadmin || echo "⚠️  'vaultadmin' database may already exist or creation failed."
+              ysqlsh -h $PGHOST -p $PGPORT -U vaultadmin -d yugabyte <<EOF
+              DO \$\$
+              BEGIN
+                IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'vaultadmin') THEN
+                  CREATE DATABASE vaultadmin;
+                END IF;
+              END
+              \$\$;
+              EOF
 
               # Vault DB config
               vault write yugabyte-db/config/yugabyte \
