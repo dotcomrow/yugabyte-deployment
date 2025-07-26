@@ -115,7 +115,7 @@ spec:
               DO \$\$
               BEGIN
                 IF NOT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vaultadmin') THEN
-                  CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE;
+                  CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
                   GRANT ALL PRIVILEGES ON DATABASE yugabyte TO vaultadmin;
                 ELSE
                   ALTER ROLE vaultadmin CREATEROLE;
