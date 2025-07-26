@@ -125,16 +125,15 @@ spec:
               EOF
 
               # ✅ Create vaultadmin's personal DB
-              echo "📦 Creating 'vaultadmin' database if it doesn't exist..."
-              ysqlsh -h $PGHOST -p $PGPORT -U vaultadmin -d yugabyte <<EOF
-              DO \$\$
-              BEGIN
-                IF NOT EXISTS (SELECT 1 FROM pg_database WHERE datname = 'vaultadmin') THEN
-                  CREATE DATABASE vaultadmin;
-                END IF;
-              END
-              \$\$;
-              EOF
+              echo "📦 Checking if 'vaultadmin' database exists..."
+              EXISTS=$(ysqlsh -h $PGHOST -p $PGPORT -U vaultadmin -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='vaultadmin'")
+
+              if [ "$EXISTS" != "1" ]; then
+                echo "📦 Creating 'vaultadmin' database..."
+                ysqlsh -h $PGHOST -p $PGPORT -U vaultadmin -d yugabyte -c "CREATE DATABASE vaultadmin"
+              else
+                echo "✅ Database 'vaultadmin' already exists."
+              fi
 
               # Vault DB config
               vault write yugabyte-db/config/yugabyte \
