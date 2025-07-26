@@ -124,6 +124,10 @@ spec:
               \$\$;
               EOF
 
+              # ✅ Create vaultadmin's personal DB
+              echo "📦 Creating 'vaultadmin' database if it doesn't exist..."
+              createdb -h $PGHOST -p $PGPORT -U vaultadmin vaultadmin || echo "⚠️  'vaultadmin' database may already exist or creation failed."
+
               # Vault DB config
               vault write yugabyte-db/config/yugabyte \
                 plugin_name=postgresql-database-plugin \
