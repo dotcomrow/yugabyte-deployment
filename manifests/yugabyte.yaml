@@ -110,19 +110,29 @@ spec:
               vault kv put secret/vaultadmin value="$STRONG_PWD"
 
               echo "🔐 Creating 'vaultadmin' if not exists..."
-              ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte <<EOSQL
+              while true; do
+                SQL=$(cat <<EOSQL
               DO \$\$
               BEGIN
-                IF NOT EXISTS (
-                  SELECT 1 FROM pg_roles WHERE rolname = 'vaultadmin'
-                ) THEN
+                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'vaultadmin') THEN
                   CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
                 ELSE
-                  ALTER ROLE vaultadmin WITH PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
+                  ALTER ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
                 END IF;
+                GRANT ALL PRIVILEGES ON DATABASE yugabyte TO vaultadmin;
               END
               \$\$;
               EOSQL
+                )
+
+                if echo "$SQL" | ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte >/dev/null 2>&1; then
+                  echo "✅ vaultadmin created/updated"
+                  break
+                else
+                  echo "🔁 Retrying vaultadmin role creation..."
+                  sleep 3
+                fi
+              done
 
               echo "📦 Granting vaultadmin access to all existing schemas..."
               ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte <<EOSQL
