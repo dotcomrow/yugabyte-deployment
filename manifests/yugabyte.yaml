@@ -155,7 +155,7 @@ spec:
 
               echo "🕒 Waiting for 'vaultadmin' to be available for login..."
               while true; do
-                if PGPASSWORD="$STRONG_PWD" ysqlsh -h "$PGHOST" -p "$PGPORT" -U vaultadmin -d yugabyte -c '\\q' >/dev/null 2>&1; then
+                if PGPASSWORD="$STRONG_PWD" ysqlsh -h "$PGHOST" -p "$PGPORT" -U vaultadmin -d yugabyte -c '\q' >/dev/null 2>&1; then
                   echo "✅ vaultadmin is ready."
                   break
                 fi
