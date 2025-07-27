@@ -83,129 +83,101 @@ spec:
           command: ["/bin/bash", "-c"]
           args:
             - |
+              #!/bin/sh
+              set -euo pipefail
+
               echo "🔐 Configuring Vault DB secrets engine..."
 
               PGHOST=yb-tserver-service.yugabyte.svc.cluster.local
               PGPORT=5433
+
               echo "⏳ Waiting for YugabyteDB to be ready at ${PGHOST}:${PGPORT}..."
-              while true; do
-                (echo > /dev/tcp/${PGHOST}/${PGPORT}) >/dev/null 2>&1 && break
+              while ! nc -z "$PGHOST" "$PGPORT" >/dev/null 2>&1; do
                 echo "🔄 Still waiting for Yugabyte..."
                 sleep 5
               done
-
               echo "✅ YugabyteDB is available."
 
               export PATH=$PATH:/vault-bin
               export VAULT_ADDR=http://vault.vault.svc.cluster.local:8200
+              export VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
 
-              VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
-              export VAULT_TOKEN
-
-              # Enable DB engine
               vault secrets enable -path=yugabyte-db database || true
 
-              echo "📌 Creating 'vaultadmin' role in Yugabyte..."
               STRONG_PWD="$(head -c 64 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 24)"
-              echo "Generated Password: $STRONG_PWD"
-
+              echo "📌 Creating 'vaultadmin' with password: $STRONG_PWD"
               vault kv put secret/vaultadmin value="$STRONG_PWD"
 
-              echo "📡 Connecting to Yugabyte to configure 'vaultadmin' role..."
-              echo "📡 Attempting to configure 'vaultadmin' role in Yugabyte..."
-
+              echo "📡 Configuring 'vaultadmin' in Yugabyte..."
               while true; do
                 SQL_OUTPUT=$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -tAc "
-                DO \$\$
-                DECLARE
-                  role_exists BOOLEAN;
-                BEGIN
-                  SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vaultadmin') INTO role_exists;
-
-                  IF NOT role_exists THEN
-                    RAISE NOTICE 'Creating role vaultadmin...';
+                DO \$\$ BEGIN
+                  IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'vaultadmin') THEN
                     CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
-                    GRANT ALL PRIVILEGES ON DATABASE yugabyte TO vaultadmin;
-                    RAISE NOTICE 'Role vaultadmin created and privileges granted.';
                   ELSE
-                    RAISE NOTICE 'Role vaultadmin already exists. Updating privileges...';
                     ALTER ROLE vaultadmin CREATEROLE CREATEDB;
-                    RAISE NOTICE 'Privileges updated for existing role vaultadmin.';
                   END IF;
-                END
-                \$\$;
-                " 2>&1)
-
-                if [ $? -eq 0 ]; then
-                  echo "✅ vaultadmin role successfully configured."
-                  break
-                fi
-
-                echo "🔄 vaultadmin role setup failed, retrying in 5s..."
+                  GRANT ALL PRIVILEGES ON DATABASE yugabyte TO vaultadmin;
+                END \$\$;" 2>&1) && break
+                echo "🔁 Retrying vaultadmin setup..."
                 echo "$SQL_OUTPUT"
                 sleep 5
               done
 
-              echo "📝 Final ysqlsh output:"
-              echo "$SQL_OUTPUT"
+              echo "📦 Granting vaultadmin access to all existing schemas..."
+              ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte <<'EOSQL'
+              DO $$
+              DECLARE
+                schema_name text;
+              BEGIN
+                FOR schema_name IN
+                  SELECT nspname FROM pg_namespace
+                  WHERE nspname NOT IN ('pg_catalog', 'information_schema')
+                LOOP
+                  EXECUTE format('GRANT USAGE ON SCHEMA %I TO vaultadmin;', schema_name);
+                  EXECUTE format('GRANT SELECT ON ALL TABLES IN SCHEMA %I TO vaultadmin;', schema_name);
+                  EXECUTE format('GRANT USAGE ON ALL SEQUENCES IN SCHEMA %I TO vaultadmin;', schema_name);
+                  EXECUTE format('GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA %I TO vaultadmin;', schema_name);
+                END LOOP;
+              END $$;
+              EOSQL
 
-              echo "⏳ Waiting for 'vaultadmin' role to become usable..."
-              RETRIES=0
-              MAX_RETRIES=20
-
-              while true; do
-                if ysqlsh -h "$PGHOST" -p "$PGPORT" -U vaultadmin -d yugabyte -c '\q' >/dev/null 2>&1; then
-                  echo "✅ vaultadmin is ready to use."
+              echo "🕒 Waiting for 'vaultadmin' to be available for login..."
+              for i in $(seq 1 20); do
+                if ysqlsh -h "$PGHOST" -p "$PGPORT" -U vaultadmin -d yugabyte -c '\\q' >/dev/null 2>&1; then
+                  echo "✅ vaultadmin is ready."
                   break
-                else
-                  echo "🔄 vaultadmin not ready yet. Retrying in 3s..."
-                  sleep 3
-                  RETRIES=$((RETRIES + 1))
                 fi
-
-                if [ "$RETRIES" -ge "$MAX_RETRIES" ]; then
-                  echo "❌ vaultadmin login failed after $MAX_RETRIES retries."
+                echo "🔁 Waiting for vaultadmin login..."
+                sleep 3
+                if [ "$i" -eq 20 ]; then
+                  echo "❌ vaultadmin login failed after retries."
                   exit 1
                 fi
               done
 
-              echo "📝 ysqlsh output:"
-              echo "$SQL_OUTPUT"
+              echo "🔍 Verifying vaultadmin role attributes..."
+              ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname='vaultadmin';"
 
-              echo "✅ Verifying role vaultadmin exists and has correct attributes..."
-              ysqlsh -h $PGHOST -p $PGPORT -U yugabyte -d yugabyte -c "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname = 'vaultadmin';"
-
-              # ✅ Create vaultadmin's personal DB
-              echo "📦 Checking if 'vaultadmin' database exists..."
-              EXISTS=$(ysqlsh -h $PGHOST -p $PGPORT -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='vaultadmin'")
-
-              if [ "$EXISTS" != "1" ]; then
-                echo "📦 Creating 'vaultadmin' database..."
-                ysqlsh -h $PGHOST -p $PGPORT -U yugabyte -d yugabyte -c "CREATE DATABASE vaultadmin"
+              echo "📦 Checking for personal vaultadmin DB..."
+              DB_EXISTS=$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='vaultadmin'")
+              if [ "$DB_EXISTS" != "1" ]; then
+                echo "📦 Creating DB 'vaultadmin'..."
+                ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c "CREATE DATABASE vaultadmin"
               else
-                echo "✅ Database 'vaultadmin' already exists."
+                echo "✅ Database 'vaultadmin' exists."
               fi
 
-              # Vault DB config
+              echo "🛠️ Writing Vault DB config and roles..."
               vault write yugabyte-db/config/yugabyte \
                 plugin_name=postgresql-database-plugin \
-                allowed_roles="readonly,readwrite,admin" \
+                allowed_roles="*" \
                 connection_url="postgresql://{{username}}:{{password}}@$PGHOST:$PGPORT/yugabyte?sslmode=disable" \
                 username="vaultadmin" \
                 password="$STRONG_PWD"
 
-              # Roles
-              vault write yugabyte-db/roles/readonly \
-                db_name=yugabyte \
-                creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT CONNECT ON DATABASE yugabyte TO \"{{name}}\"; GRANT USAGE ON SCHEMA public TO \"{{name}}\"; GRANT SELECT ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
-                default_ttl="1h" \
-                max_ttl="24h"
+              echo "✅ Vault DB secrets engine setup complete."
 
-              vault write yugabyte-db/roles/readwrite \
-                db_name=yugabyte \
-                creation_statements="CREATE ROLE \"{{name}}\" WITH LOGIN PASSWORD '{{password}}' VALID UNTIL '{{expiration}}'; GRANT CONNECT ON DATABASE yugabyte TO \"{{name}}\"; GRANT USAGE ON SCHEMA public TO \"{{name}}\"; GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO \"{{name}}\";" \
-                default_ttl="1h" \
-                max_ttl="24h"
           resources:
             requests:
               cpu: 100m
