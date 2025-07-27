@@ -112,27 +112,42 @@ spec:
               vault kv put secret/vaultadmin value="$STRONG_PWD"
 
               echo "📡 Connecting to Yugabyte to configure 'vaultadmin' role..."
+              echo "📡 Attempting to configure 'vaultadmin' role in Yugabyte..."
 
-              SQL_OUTPUT=$(ysqlsh -h $PGHOST -p $PGPORT -U yugabyte -d yugabyte -tAc "
-              DO \$\$
-              DECLARE
-                role_exists BOOLEAN;
-              BEGIN
-                SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vaultadmin') INTO role_exists;
+              while true; do
+                SQL_OUTPUT=$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -tAc "
+                DO \$\$
+                DECLARE
+                  role_exists BOOLEAN;
+                BEGIN
+                  SELECT EXISTS (SELECT 1 FROM pg_roles WHERE rolname = 'vaultadmin') INTO role_exists;
 
-                IF NOT role_exists THEN
-                  RAISE NOTICE 'Creating role vaultadmin...';
-                  CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
-                  GRANT ALL PRIVILEGES ON DATABASE yugabyte TO vaultadmin;
-                  RAISE NOTICE 'Role vaultadmin created and privileges granted.';
-                ELSE
-                  RAISE NOTICE 'Role vaultadmin already exists. Updating privileges...';
-                  ALTER ROLE vaultadmin CREATEROLE CREATEDB;
-                  RAISE NOTICE 'Privileges updated for existing role vaultadmin.';
-                END IF;
-              END
-              \$\$;
-              ")
+                  IF NOT role_exists THEN
+                    RAISE NOTICE 'Creating role vaultadmin...';
+                    CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
+                    GRANT ALL PRIVILEGES ON DATABASE yugabyte TO vaultadmin;
+                    RAISE NOTICE 'Role vaultadmin created and privileges granted.';
+                  ELSE
+                    RAISE NOTICE 'Role vaultadmin already exists. Updating privileges...';
+                    ALTER ROLE vaultadmin CREATEROLE CREATEDB;
+                    RAISE NOTICE 'Privileges updated for existing role vaultadmin.';
+                  END IF;
+                END
+                \$\$;
+                " 2>&1)
+
+                if [ $? -eq 0 ]; then
+                  echo "✅ vaultadmin role successfully configured."
+                  break
+                fi
+
+                echo "🔄 vaultadmin role setup failed, retrying in 5s..."
+                echo "$SQL_OUTPUT"
+                sleep 5
+              done
+
+              echo "📝 Final ysqlsh output:"
+              echo "$SQL_OUTPUT"
 
               echo "⏳ Waiting for 'vaultadmin' role to become usable..."
               RETRIES=0
