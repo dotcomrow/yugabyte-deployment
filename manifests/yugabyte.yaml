@@ -134,6 +134,26 @@ spec:
               \$\$;
               ")
 
+              echo "⏳ Waiting for 'vaultadmin' role to become usable..."
+              RETRIES=0
+              MAX_RETRIES=20
+
+              while true; do
+                if ysqlsh -h "$PGHOST" -p "$PGPORT" -U vaultadmin -d yugabyte -c '\q' >/dev/null 2>&1; then
+                  echo "✅ vaultadmin is ready to use."
+                  break
+                else
+                  echo "🔄 vaultadmin not ready yet. Retrying in 3s..."
+                  sleep 3
+                  RETRIES=$((RETRIES + 1))
+                fi
+
+                if [ "$RETRIES" -ge "$MAX_RETRIES" ]; then
+                  echo "❌ vaultadmin login failed after $MAX_RETRIES retries."
+                  exit 1
+                fi
+              done
+
               echo "📝 ysqlsh output:"
               echo "$SQL_OUTPUT"
 
