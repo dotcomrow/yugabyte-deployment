@@ -111,7 +111,7 @@ spec:
 
               echo "📡 Configuring 'vaultadmin' in Yugabyte..."
               while true; do
-                SQL_OUTPUT=$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -tAc "
+                SQL_OUTPUT=$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte "
                 DO \$\$ BEGIN
                   IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'vaultadmin') THEN
                     CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
