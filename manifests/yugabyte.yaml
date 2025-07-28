@@ -142,9 +142,10 @@ spec:
               BEGIN
                 FOR schema_name IN
                   SELECT nspname FROM pg_namespace
-                  WHERE nspname NOT IN ('pg_catalog', 'information_schema')
+                  WHERE nspname NOT IN ('pg_catalog', 'information_schema') OR nspname = 'public'
                 LOOP
                   EXECUTE 'GRANT USAGE ON SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
+                  EXECUTE 'GRANT CREATE ON SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
                   EXECUTE 'GRANT SELECT ON ALL TABLES IN SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
                   EXECUTE 'GRANT USAGE ON ALL SEQUENCES IN SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
                   EXECUTE 'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
