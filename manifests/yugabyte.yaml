@@ -140,9 +140,13 @@ spec:
               DECLARE
                 schema_name text;
               BEGIN
+                -- ✅ Explicitly grant for 'public' schema first
+                EXECUTE 'GRANT USAGE, CREATE ON SCHEMA public TO vaultadmin';
+
+                -- ✅ Now loop through other schemas
                 FOR schema_name IN
                   SELECT nspname FROM pg_namespace
-                  WHERE nspname NOT IN ('pg_catalog', 'information_schema') OR nspname = 'public'
+                  WHERE nspname NOT IN ('pg_catalog', 'information_schema', 'public')
                 LOOP
                   EXECUTE 'GRANT USAGE ON SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
                   EXECUTE 'GRANT CREATE ON SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
