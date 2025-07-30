@@ -68,6 +68,9 @@ spec:
         - name: root-token
           secret:
             secretName: vault-root-token
+        - name: kubectl-bin
+          emptyDir: {}
+
       initContainers:
         - name: inject-vault
           image: hashicorp/vault:1.15.4
@@ -77,6 +80,16 @@ spec:
           volumeMounts:
             - name: vault-bin
               mountPath: /vault-bin
+
+        - name: load-kubectl
+          image: alpine/k8s:1.31.4
+          command: ["sh", "-c"]
+          args:
+            - cp  /usr/bin/kubectl /kubectl-bin/kubectl && chmod +x /kubectl-bin/kubectl
+          volumeMounts:
+            - name: kubectl-bin
+              mountPath: /kubectl-bin
+
       containers:
         - name: create-user
           image: yugabytedb/yugabyte:latest
@@ -108,6 +121,19 @@ spec:
               STRONG_PWD="$(head -c 64 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 24)"
               echo "📌 Creating 'vaultadmin' with password: $STRONG_PWD"
               vault kv put secret/vaultadmin value="$STRONG_PWD"
+
+              echo "🔐 Creating/updating Kubernetes secret..."
+              cat <<EOF | kubectl apply -f - 
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: pgweb-secret
+                namespace: yugabyte
+              type: Opaque
+              stringData:
+                PGWEB_USER: vaultadmin
+                PGWEB_PASS: $STRONG_PWD
+              EOF
 
               echo "🔐 Creating 'vaultadmin' if not exists..."
               while true; do
@@ -185,6 +211,8 @@ spec:
             - name: root-token
               mountPath: /vault-token
               readOnly: true
+            - name: kubectl-bin
+              mountPath: /usr/local/bin
 ---
 # YugabyteDB Master Service
 apiVersion: v1
@@ -399,13 +427,26 @@ spec:
       containers:
         - name: pgweb
           image: sosedoff/pgweb
+          env:
+            - name: PGWEB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: pgweb-secret
+                  key: PGWEB_USER
+            - name: PGWEB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: pgweb-secret
+                  key: PGWEB_PASS
           args:
             - --bind=0.0.0.0
             - --listen=8081
             - --host=yb-tserver-service.yugabyte.svc.cluster.local
             - --port=5433
-            - --user=yugabyte
-            - --url=postgres://yugabyte@yb-tserver-service.yugabyte.svc.cluster.local:5433/yugabyte?sslmode=disable
+            - --user=$(PGWEB_USER)
+            - --pass=$(PGWEB_PASS)
+            - --dbname=yugabyte
+            - --ssl=disable
           ports:
             - containerPort: 8081
           resources:
