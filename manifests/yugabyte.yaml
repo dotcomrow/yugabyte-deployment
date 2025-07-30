@@ -134,32 +134,6 @@ spec:
                 fi
               done
 
-              echo "📦 Granting Vault roles access to all existing schemas..."
-              ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte <<EOSQL
-              DO \$\$
-              DECLARE
-                schema_name text;
-              BEGIN
-                -- Grant schema access to vaultadmin and openwebui (the Vault DB role)
-                FOREACH schema_name IN ARRAY ARRAY['public']
-                LOOP
-                  EXECUTE 'GRANT USAGE, CREATE ON SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
-                  EXECUTE 'GRANT USAGE, CREATE ON SCHEMA ' || quote_ident(schema_name) || ' TO openwebui';
-                END LOOP;
-
-                -- Grant additional permissions to vaultadmin (optional for monitoring)
-                FOR schema_name IN
-                  SELECT nspname FROM pg_namespace
-                  WHERE nspname NOT IN ('pg_catalog', 'information_schema')
-                LOOP
-                  EXECUTE 'GRANT SELECT ON ALL TABLES IN SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
-                  EXECUTE 'GRANT USAGE ON ALL SEQUENCES IN SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
-                  EXECUTE 'GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ' || quote_ident(schema_name) || ' TO vaultadmin';
-                END LOOP;
-              END
-              \$\$;
-              EOSQL
-
               echo "🕒 Waiting for 'vaultadmin' to be available for login..."
               while true; do
                 if PGPASSWORD="$STRONG_PWD" ysqlsh -h "$PGHOST" -p "$PGPORT" -U vaultadmin -d yugabyte -c '\q' >/dev/null 2>&1; then
