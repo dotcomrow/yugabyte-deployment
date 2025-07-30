@@ -99,7 +99,7 @@ spec:
               #!/bin/sh
               set -euo pipefail
 
-              export PATH=$PATH:~/bin
+              export PATH=$PATH:/home/yugabyte/bin
               echo "🔐 Configuring Vault DB secrets engine..."
 
               PGHOST=yb-tserver-service.yugabyte.svc.cluster.local
