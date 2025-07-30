@@ -135,27 +135,33 @@ spec:
                 PGWEB_PASS: $STRONG_PWD
               EOF
 
-              echo "🔐 Creating 'vaultadmin' if not exists..."
-              while true; do
-                SQL=$(cat <<EOSQL
-              DO \$\$
-              BEGIN
-                IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = 'vaultadmin') THEN
-                  CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
-                ELSE
-                  ALTER ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;
-                END IF;
-                GRANT ALL PRIVILEGES ON DATABASE yugabyte TO vaultadmin;
-              END
-              \$\$;
-              EOSQL
-                )
+              echo "🔐 Creating or updating 'vaultadmin'..."
 
-                if echo "$SQL" | ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte >/dev/null 2>&1; then
-                  echo "✅ vaultadmin created/updated"
+              while true; do
+                ROLE_EXISTS=$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'vaultadmin'" || true)
+
+                if [ "$ROLE_EXISTS" = "1" ]; then
+                  echo "🔄 Role 'vaultadmin' exists, altering..."
+                  ALTER_SQL="ALTER ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;"
+                else
+                  echo "🆕 Creating role 'vaultadmin'..."
+                  ALTER_SQL="CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;"
+                fi
+
+                if echo "$ALTER_SQL" | ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte; then
+                  echo "✅ Role 'vaultadmin' created/updated"
+                else
+                  echo "❌ Failed to create/alter role 'vaultadmin'"
+                  sleep 3
+                  continue
+                fi
+
+                echo "🔧 Granting privileges on 'yugabyte' DB..."
+                if ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c "GRANT ALL PRIVILEGES ON DATABASE yugabyte TO vaultadmin;"; then
+                  echo "✅ Privileges granted"
                   break
                 else
-                  echo "🔁 Retrying vaultadmin role creation..."
+                  echo "❌ Failed to grant privileges. Retrying..."
                   sleep 3
                 fi
               done
