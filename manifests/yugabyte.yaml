@@ -438,15 +438,14 @@ spec:
                 secretKeyRef:
                   name: pgweb-secret
                   key: PGWEB_PASS
-          args:
-            - --bind=0.0.0.0
-            - --listen=8081
-            - --host=yb-tserver-service.yugabyte.svc.cluster.local
-            - --port=5433
-            - --user=$(PGWEB_USER)
-            - --pass=$(PGWEB_PASS)
-            - --dbname=yugabyte
-            - --ssl=disable
+          command:
+            - /bin/sh
+            - -c
+            - |
+              exec pgweb \
+                --bind=0.0.0.0 \
+                --listen=8081 \
+                --url=postgres://$PGWEB_USER:$PGWEB_PASS@yb-tserver-service.yugabyte.svc.cluster.local:5433/yugabyte?sslmode=disable
           ports:
             - containerPort: 8081
           resources:
