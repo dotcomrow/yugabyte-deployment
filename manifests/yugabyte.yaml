@@ -164,6 +164,10 @@ spec:
                 username="vaultadmin" \
                 password="$STRONG_PWD"
 
+              echo "Disabling yugabyte superuser account..."
+              ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c "ALTER USER yugabyte WITH NOLOGIN;"
+              echo "✅ Yugabyte superuser account disabled."
+
               echo "✅ Vault DB secrets engine setup complete."
 
           resources:
