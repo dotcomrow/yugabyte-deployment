@@ -405,23 +405,23 @@ spec:
       protocol: TCP
       name: http
 ---
-apiVersion: apisix.apache.org/v2
-kind: ApisixRoute
-metadata:
-  name: yugabyte-gui
-  namespace: yugabyte
-spec:
-  ingressClassName: apisix
-  http:
-    - name: yugabyte-gui
-      match:
-        hosts:
-          - yugabyte.suncoast.systems
-        paths:
-          - /*
-      backends:
-        - serviceName: oauth2-proxy-yugabyte
-          servicePort: 4180
+# apiVersion: apisix.apache.org/v2
+# kind: ApisixRoute
+# metadata:
+#   name: yugabyte-gui
+#   namespace: yugabyte
+# spec:
+#   ingressClassName: apisix
+#   http:
+#     - name: yugabyte-gui
+#       match:
+#         hosts:
+#           - yugabyte.suncoast.systems
+#         paths:
+#           - /*
+#       backends:
+#         - serviceName: oauth2-proxy-yugabyte
+#           servicePort: 4180
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -556,28 +556,28 @@ spec:
       targetPort: 4180
       name: http
 ---
-apiVersion: apisix.apache.org/v2
-kind: ApisixRoute
-metadata:
-  name: pgweb
-  namespace: yugabyte
-spec:
-  ingressClassName: apisix
-  http:
-    - name: pgweb-route
-      match:
-        hosts:
-          - pgweb.suncoast.systems
-        paths:
-          - /*
-      backends:
-        - serviceName: oauth2-proxy-pgweb
-          servicePort: 4180
-      plugins:
-        - name: proxy-rewrite
-          enable: true
-          config:
-            regex_uri: ["^/pgweb(/.*)?$", "/$1"]
+# apiVersion: apisix.apache.org/v2
+# kind: ApisixRoute
+# metadata:
+#   name: pgweb
+#   namespace: yugabyte
+# spec:
+#   ingressClassName: apisix
+#   http:
+#     - name: pgweb-route
+#       match:
+#         hosts:
+#           - pgweb.suncoast.systems
+#         paths:
+#           - /*
+#       backends:
+#         - serviceName: oauth2-proxy-pgweb
+#           servicePort: 4180
+#       plugins:
+#         - name: proxy-rewrite
+#           enable: true
+#           config:
+#             regex_uri: ["^/pgweb(/.*)?$", "/$1"]
 ---
 apiVersion: v1
 kind: Secret
