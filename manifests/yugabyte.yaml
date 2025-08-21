@@ -190,6 +190,7 @@ spec:
               fi
 
               echo "🛠️ Writing Vault DB config and roles..."
+              # This is the database config that ALL apps will use so modify here only!
               vault write yugabyte-db/config/yugabyte \
                 plugin_name=postgresql-database-plugin \
                 allowed_roles="*" \
