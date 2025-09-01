@@ -1,3 +1,11 @@
+# =============================================================================
+# YugabyteDB (enable advisory locks for Postgres compatibility)
+# - REQUIRED:
+#   * yb-master: allowed_preview_flags_csv=ysql_yb_enable_advisory_locks
+#   * yb-tserver: ysql_yb_enable_advisory_locks=true
+# - OPTIONAL (commented): a few tuning flags you may enable later via GitOps.
+# =============================================================================
+
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -26,6 +34,12 @@ spec:
           - "--fs_data_dirs=/mnt/data"
           - "--master_addresses=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
           - "--rpc_bind_addresses=$(POD_IP):7100"
+          # --- REQUIRED for advisory locks feature gate on YB side ---
+          - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
+          # --- OPTIONAL: handy flags you might want later (uncomment to use) ---
+          # - "--enable_ysql=true"                                 # ensure YSQL is on (default true in recent images)
+          # - "--ysql_num_shards_per_tserver=2"                    # small clusters often benefit from lower shard count
+          # - "--placement_cloud=k8s" "--placement_region=dc1" "--placement_zone=zone1"  # if you use multi-az placement policies
         env:
         - name: POD_IP
           valueFrom:
@@ -33,7 +47,9 @@ spec:
               fieldPath: status.podIP
         ports:
         - containerPort: 7000
+          name: http
         - containerPort: 7100
+          name: rpc
         resources:
           requests:
             cpu: 500m
@@ -44,6 +60,20 @@ spec:
         volumeMounts:
         - name: yb-master-data
           mountPath: /mnt/data
+        readinessProbe:
+          httpGet:
+            path: /api/v1/masters
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 12
+        livenessProbe:
+          httpGet:
+            path: /api/v1/masters
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          failureThreshold: 6
       volumes:
       - name: yb-master-data
         emptyDir: {}
@@ -190,7 +220,6 @@ spec:
               fi
 
               echo "🛠️ Writing Vault DB config and roles..."
-              # This is the database config that ALL apps will use so modify here only!
               vault write yugabyte-db/config/yugabyte \
                 plugin_name=postgresql-database-plugin \
                 allowed_roles="*" \
@@ -276,6 +305,12 @@ spec:
           - "--fs_data_dirs=/mnt/data"
           - "--tserver_master_addrs=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
           - "--rpc_bind_addresses=$(POD_IP):9100"
+          # --- REQUIRED: actually enable advisory locks at the YSQL layer ---
+          - "--ysql_yb_enable_advisory_locks=true"
+          # --- OPTIONAL: useful YSQL tweaks (uncomment if desired) ---
+          # - "--ysql_max_connections=200"                    # default ~300; size for your cluster
+          # - "--ysql_enable_packed_row=true"                 # space efficiency for heavy OLTP
+          # - "--ysql_pg_conf_csv=deadlock_timeout=2s"        # example: pass PG GUCs to YSQL
         env:
         - name: POD_IP
           valueFrom:
@@ -283,7 +318,9 @@ spec:
               fieldPath: status.podIP
         ports:
         - containerPort: 9000
+          name: http
         - containerPort: 9100
+          name: rpc
         - containerPort: 5433
           name: ysql
         resources:
@@ -296,6 +333,18 @@ spec:
         volumeMounts:
         - name: yb-tserver-data
           mountPath: /mnt/data
+        readinessProbe:
+          tcpSocket:
+            port: ysql
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 12
+        livenessProbe:
+          tcpSocket:
+            port: ysql
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          failureThreshold: 6
       volumes:
       - name: yb-tserver-data
         emptyDir: {}
@@ -356,7 +405,7 @@ spec:
           args:
             - --http-address=0.0.0.0:4180
             - --upstream=http://yb-master-service.yugabyte.svc.cluster.local:7000
-            - --provider=github  # Or github, oidc, etc.
+            - --provider=github
             - --email-domain=*
             - --client-id=$(OAUTH2_CLIENT_ID)
             - --client-secret=$(OAUTH2_CLIENT_SECRET)
