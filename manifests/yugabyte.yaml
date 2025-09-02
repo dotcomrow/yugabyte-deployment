@@ -307,6 +307,7 @@ spec:
           - "--rpc_bind_addresses=$(POD_IP):9100"
           # --- REQUIRED: actually enable advisory locks at the YSQL layer ---
           - "--ysql_yb_enable_advisory_locks=true"
+          - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks" 
           # --- OPTIONAL: useful YSQL tweaks (uncomment if desired) ---
           # - "--ysql_max_connections=200"                    # default ~300; size for your cluster
           # - "--ysql_enable_packed_row=true"                 # space efficiency for heavy OLTP
