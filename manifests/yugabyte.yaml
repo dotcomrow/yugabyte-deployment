@@ -26,7 +26,7 @@ spec:
     spec:
       containers:
       - name: yb-master
-        image: yugabytedb/yugabyte:v2025.1.0.0
+        image: yugabytedb/yugabyte:latest
         command: ["/home/yugabyte/bin/yb-master"]
         args:
           - "--fs_data_dirs=/mnt/data"
@@ -119,7 +119,7 @@ spec:
               mountPath: /kubectl-bin
       containers:
         - name: create-user
-          image: yugabytedb/yugabyte:v2025.1.0.0
+          image: yugabytedb/yugabyte:latest
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -294,7 +294,7 @@ spec:
     spec:
       containers:
       - name: yb-tserver
-        image: yugabytedb/yugabyte:v2025.1.0.0
+        image: yugabytedb/yugabyte:latest
         command: ["/home/yugabyte/bin/yb-tserver"]
         args:
           - "--fs_data_dirs=/mnt/data"
