@@ -1,9 +1,7 @@
 # =============================================================================
-# YugabyteDB (enable advisory locks for Postgres compatibility)
-# - REQUIRED:
-#   * yb-master: allowed_preview_flags_csv=ysql_yb_enable_advisory_locks
-#   * yb-tserver: ysql_yb_enable_advisory_locks=true
-# - OPTIONAL (commented): a few tuning flags you may enable later via GitOps.
+# YugabyteDB (advisory locks enabled for PG compatibility)
+# - Enable advisory locks on BOTH master and tserver.
+# - Pin to v2025.1.0.0 which includes advisory locks (TP/preview).
 # =============================================================================
 
 apiVersion: apps/v1
@@ -28,18 +26,19 @@ spec:
     spec:
       containers:
       - name: yb-master
-        image: yugabytedb/yugabyte:latest
+        image: yugabytedb/yugabyte:v2025.1.0.0
         command: ["/home/yugabyte/bin/yb-master"]
         args:
           - "--fs_data_dirs=/mnt/data"
           - "--master_addresses=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
           - "--rpc_bind_addresses=$(POD_IP):7100"
-          # --- REQUIRED for advisory locks feature gate on YB side ---
+          # --- REQUIRED for advisory locks (enable + allow preview flag) ---
+          - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
-          # --- OPTIONAL: handy flags you might want later (uncomment to use) ---
-          # - "--enable_ysql=true"                                 # ensure YSQL is on (default true in recent images)
-          # - "--ysql_num_shards_per_tserver=2"                    # small clusters often benefit from lower shard count
-          # - "--placement_cloud=k8s" "--placement_region=dc1" "--placement_zone=zone1"  # if you use multi-az placement policies
+          # --- OPTIONAL flags (leave commented until you need them) ---
+          # - "--enable_ysql=true"
+          # - "--ysql_num_shards_per_tserver=2"
+          # - "--placement_cloud=k8s" "--placement_region=dc1" "--placement_zone=zone1"
         env:
         - name: POD_IP
           valueFrom:
@@ -77,6 +76,7 @@ spec:
       volumes:
       - name: yb-master-data
         emptyDir: {}
+
 ---
 apiVersion: batch/v1
 kind: Job
@@ -100,7 +100,6 @@ spec:
             secretName: vault-root-token
         - name: kubectl-bin
           emptyDir: {}
-
       initContainers:
         - name: inject-vault
           image: hashicorp/vault:1.15.4
@@ -110,25 +109,22 @@ spec:
           volumeMounts:
             - name: vault-bin
               mountPath: /vault-bin
-
         - name: load-kubectl
           image: alpine/k8s:1.31.4
           command: ["sh", "-c"]
           args:
-            - cp  /usr/bin/kubectl /kubectl-bin/kubectl && chmod +x /kubectl-bin/kubectl
+            - cp /usr/bin/kubectl /kubectl-bin/kubectl && chmod +x /kubectl-bin/kubectl
           volumeMounts:
             - name: kubectl-bin
               mountPath: /kubectl-bin
-
       containers:
         - name: create-user
-          image: yugabytedb/yugabyte:latest
+          image: yugabytedb/yugabyte:v2025.1.0.0
           command: ["/bin/bash", "-c"]
           args:
             - |
               #!/bin/sh
               set -euo pipefail
-
               export PATH=$PATH:/home/yugabyte/bin
               echo "🔐 Configuring Vault DB secrets engine..."
 
@@ -167,10 +163,8 @@ spec:
               EOF
 
               echo "🔐 Creating or updating 'vaultadmin'..."
-
               while true; do
                 ROLE_EXISTS=$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'vaultadmin'" || true)
-
                 if [ "$ROLE_EXISTS" = "1" ]; then
                   echo "🔄 Role 'vaultadmin' exists, altering..."
                   ALTER_SQL="ALTER ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;"
@@ -239,7 +233,6 @@ spec:
               done
 
               echo "✅ Vault DB secrets engine setup complete."
-
           resources:
             requests:
               cpu: 100m
@@ -257,6 +250,7 @@ spec:
               readOnly: true
             - name: kubectl-bin
               mountPath: /usr/local/bin
+
 ---
 # YugabyteDB Master Service
 apiVersion: v1
@@ -275,6 +269,7 @@ spec:
   selector:
     app: yugabyte
     component: yb-master
+
 ---
 # YugabyteDB TServer StatefulSet
 apiVersion: apps/v1
@@ -299,19 +294,19 @@ spec:
     spec:
       containers:
       - name: yb-tserver
-        image: yugabytedb/yugabyte:latest
+        image: yugabytedb/yugabyte:v2025.1.0.0
         command: ["/home/yugabyte/bin/yb-tserver"]
         args:
           - "--fs_data_dirs=/mnt/data"
           - "--tserver_master_addrs=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
           - "--rpc_bind_addresses=$(POD_IP):9100"
-          # --- REQUIRED: actually enable advisory locks at the YSQL layer ---
+          # --- REQUIRED: advisory locks + preview flag allowed ---
           - "--ysql_yb_enable_advisory_locks=true"
-          - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks" 
-          # --- OPTIONAL: useful YSQL tweaks (uncomment if desired) ---
-          # - "--ysql_max_connections=200"                    # default ~300; size for your cluster
-          # - "--ysql_enable_packed_row=true"                 # space efficiency for heavy OLTP
-          # - "--ysql_pg_conf_csv=deadlock_timeout=2s"        # example: pass PG GUCs to YSQL
+          - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
+          # --- OPTIONAL: YSQL tweaks (uncomment as needed) ---
+          # - "--ysql_max_connections=200"
+          # - "--ysql_enable_packed_row=true"
+          # - "--ysql_pg_conf_csv=deadlock_timeout=2s"
         env:
         - name: POD_IP
           valueFrom:
@@ -349,8 +344,9 @@ spec:
       volumes:
       - name: yb-tserver-data
         emptyDir: {}
+
 ---
-# YugabyteDB TServer Service
+# YugabyteDB TServer Service (headless)
 apiVersion: v1
 kind: Service
 metadata:
@@ -371,6 +367,7 @@ spec:
   selector:
     app: yugabyte
     component: yb-tserver
+
 ---
 apiVersion: v1
 kind: Secret
@@ -382,6 +379,7 @@ stringData:
   client-id: "<path:secret/data/yugabyte-deployment-oauth2-client-id#value>"
   client-secret: "<path:secret/data/yugabyte-deployment-oauth2-client-secret#value>"
   cookie-secret: "<path:secret/data/yugabyte-deployment-oauth2-cookie-secret#value>"
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -440,6 +438,7 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+
 ---
 apiVersion: v1
 kind: Service
@@ -455,6 +454,7 @@ spec:
       targetPort: 4180
       protocol: TCP
       name: http
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -502,6 +502,7 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+
 ---
 apiVersion: v1
 kind: Service
@@ -516,6 +517,7 @@ spec:
       targetPort: 8081
       protocol: TCP
       name: http
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -574,6 +576,7 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+
 ---
 apiVersion: v1
 kind: Service
@@ -588,6 +591,7 @@ spec:
     - port: 4180
       targetPort: 4180
       name: http
+
 ---
 apiVersion: v1
 kind: Secret
