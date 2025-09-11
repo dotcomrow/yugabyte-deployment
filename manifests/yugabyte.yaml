@@ -220,6 +220,9 @@ spec:
                 connection_url="postgresql://{{username}}:{{password}}@$PGHOST:$PGPORT/yugabyte?sslmode=disable" \
                 username="vaultadmin" \
                 password="$STRONG_PWD"
+                max_open_connections=40 \
+                max_idle_connections=0 \
+                max_connection_lifetime="0s"
 
               while true; do
                 echo "Disabling yugabyte superuser account..."
