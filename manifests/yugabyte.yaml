@@ -324,11 +324,11 @@ spec:
           name: ysql
         resources:
           requests:
-            cpu: 500m
-            memory: 512Mi
-          limits:
-            cpu: 2
+            cpu: 2000m
             memory: 2Gi
+          limits:
+            cpu: 6000m
+            memory: 6Gi
         volumeMounts:
         - name: yb-tserver-data
           mountPath: /mnt/data
