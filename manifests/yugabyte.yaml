@@ -13,7 +13,7 @@ metadata:
     app: yugabyte
 spec:
   serviceName: yb-master-service
-  replicas: 2
+  replicas: 3
   selector:
     matchLabels:
       app: yugabyte
@@ -54,7 +54,7 @@ spec:
             cpu: 500m
             memory: 512Mi
           limits:
-            cpu: 2000m
+            cpu: 1500m
             memory: 2Gi
         volumeMounts:
         - name: yb-master-data
