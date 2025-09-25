@@ -224,6 +224,15 @@ spec:
                 max_idle_connections=0 \
                 max_connection_lifetime="0s"
 
+              echo "Granting SUPERUSER to vaultadmin (idempotent)..."
+              if [ "$(/home/yugabyte/bin/ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -Atc \
+                    "select case when exists (select 1 from pg_roles where rolname='vaultadmin' and rolsuper) then 1 else 0 end")" != "1" ]; then
+                /home/yugabyte/bin/ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -v ON_ERROR_STOP=1 \
+                  -c "ALTER ROLE vaultadmin SUPERUSER;"
+              fi
+              echo "✅ vaultadmin is SUPERUSER"
+
+              # now disable the yugabyte account
               while true; do
                 echo "Disabling yugabyte superuser account..."
                 if ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c "ALTER USER yugabyte WITH NOLOGIN;"; then
