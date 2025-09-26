@@ -358,6 +358,21 @@ spec:
         emptyDir: {}
 
 ---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yb-master
+  namespace: yugabyte
+spec:
+  clusterIP: None
+  selector:
+    app: yb-master
+  ports:
+  - name: rpc
+    port: 7100
+    targetPort: 7100
+
+---
 # YugabyteDB TServer Service (headless)
 apiVersion: v1
 kind: Service
