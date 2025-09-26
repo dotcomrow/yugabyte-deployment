@@ -366,7 +366,7 @@ metadata:
 spec:
   clusterIP: None
   selector:
-    app: yb-master
+    app: yugabyte
     component: yb-master
   ports:
   - name: rpc
