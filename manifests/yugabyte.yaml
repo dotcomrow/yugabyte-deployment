@@ -367,6 +367,7 @@ spec:
   clusterIP: None
   selector:
     app: yb-master
+    component: yb-master
   ports:
   - name: rpc
     port: 7100
