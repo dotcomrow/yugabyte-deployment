@@ -315,6 +315,7 @@ spec:
           # --- REQUIRED: advisory locks + preview flag allowed ---
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
+          - "--cdc_send_null_before_image_if_not_exists=true"
           # --- OPTIONAL: YSQL tweaks (uncomment as needed) ---
           # - "--ysql_max_connections=200"
           # - "--ysql_enable_packed_row=true"
