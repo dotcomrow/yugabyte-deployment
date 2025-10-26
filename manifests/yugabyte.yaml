@@ -474,6 +474,16 @@ kind: Service
 metadata:
   name: oauth2-proxy-yugabyte
   namespace: yugabyte
+  annotations:
+    teleport.dev/name: "yugabyte-gui"
+    teleport.dev/protocol: "http"
+    teleport.dev/public-addr: "yugabyte-gui.teleport.app.suncoast.systems"
+    teleport.dev/description: "Yugabyte GUI Service"
+  labels:
+    app: yugabyte-gui
+    app.kubernetes.io/name: yugabyte-gui
+    app.kubernetes.io/component: yugabyte-database-ui
+    teleport.dev/enroll: "true"
 spec:
   selector:
     app: oauth2-proxy
@@ -612,6 +622,16 @@ kind: Service
 metadata:
   name: oauth2-proxy-pgweb
   namespace: yugabyte
+  annotations:
+    teleport.dev/name: "pgweb"
+    teleport.dev/protocol: "http"
+    teleport.dev/public-addr: "pgweb.teleport.app.suncoast.systems"
+    teleport.dev/description: "PGWeb Service"
+  labels:
+    app: pgweb
+    app.kubernetes.io/name: pgweb
+    app.kubernetes.io/component: postgres-web-ui
+    teleport.dev/enroll: "true"
 spec:
   selector:
     app: oauth2-proxy
