@@ -477,7 +477,7 @@ metadata:
   annotations:
     teleport.dev/name: "yugabyte-gui"
     teleport.dev/protocol: "http"
-    teleport.dev/public-addr: "yugabyte-gui.teleport.app.suncoast.systems"
+    teleport.dev/public-addr: "yugabyte.teleport.app.suncoast.systems"
     teleport.dev/description: "Yugabyte GUI Service"
   labels:
     app: yugabyte-gui
