@@ -586,7 +586,7 @@ spec:
             - --client-id=$(OAUTH2_CLIENT_ID)
             - --client-secret=$(OAUTH2_CLIENT_SECRET)
             - --cookie-secret=$(OAUTH2_COOKIE_SECRET)
-            - --redirect-url=https://pgweb.teleportapp.suncoast.systems/oauth2/callback
+            - --redirect-url=https://pgweb.teleport.app.suncoast.systems/oauth2/callback
             - --scope=user:email,read:org
             - --cookie-secure=true
             - --allowed-group=dotcomrow:pgweb_users
