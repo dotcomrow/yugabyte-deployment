@@ -24,6 +24,17 @@ spec:
         app: yugabyte
         component: yb-master
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values: ["yb-master"]
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: yb-master
         image: yugabytedb/yugabyte:latest
@@ -35,6 +46,7 @@ spec:
           # --- REQUIRED for advisory locks (enable + allow preview flag) ---
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
+          - "--yb_enable_read_committed_isolation=true"
           # --- OPTIONAL flags (leave commented until you need them) ---
           # - "--enable_ysql=true"
           # - "--ysql_num_shards_per_tserver=2"
@@ -54,7 +66,7 @@ spec:
             cpu: 500m
             memory: 512Mi
           limits:
-            cpu: 1500m
+            cpu: 2000m
             memory: 2Gi
         volumeMounts:
         - name: yb-master-data
@@ -304,6 +316,17 @@ spec:
         app: yugabyte
         component: yb-tserver
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values: ["yb-tserver"]
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: yb-tserver
         image: yugabytedb/yugabyte:latest
@@ -316,6 +339,7 @@ spec:
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
           - "--cdc_send_null_before_image_if_not_exists=true"
+          - "--yb_enable_read_committed_isolation=true"
           # --- OPTIONAL: YSQL tweaks (uncomment as needed) ---
           # - "--ysql_max_connections=200"
           # - "--ysql_enable_packed_row=true"
