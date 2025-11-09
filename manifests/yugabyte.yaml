@@ -1,3 +1,9 @@
+# =============================================================================
+# YugabyteDB (advisory locks enabled for PG compatibility)
+# - Enable advisory locks on BOTH master and tserver.
+# - Pin to v2025.1.0.0 which includes advisory locks (TP/preview).
+# =============================================================================
+
 apiVersion: apps/v1
 kind: StatefulSet
 metadata:
@@ -18,17 +24,6 @@ spec:
         app: yugabyte
         component: yb-master
     spec:
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: component
-                  operator: In
-                  values: ["yb-master"]
-              topologyKey: kubernetes.io/hostname
       containers:
       - name: yb-master
         image: yugabytedb/yugabyte:latest
@@ -37,7 +32,13 @@ spec:
           - "--fs_data_dirs=/mnt/data"
           - "--master_addresses=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
           - "--rpc_bind_addresses=$(POD_IP):7100"
-          - "--yb_enable_read_committed_isolation=true"
+          # --- REQUIRED for advisory locks (enable + allow preview flag) ---
+          - "--ysql_yb_enable_advisory_locks=true"
+          - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
+          # --- OPTIONAL flags (leave commented until you need them) ---
+          # - "--enable_ysql=true"
+          # - "--ysql_num_shards_per_tserver=2"
+          # - "--placement_cloud=k8s" "--placement_region=dc1" "--placement_zone=zone1"
         env:
         - name: POD_IP
           valueFrom:
@@ -53,7 +54,7 @@ spec:
             cpu: 500m
             memory: 512Mi
           limits:
-            cpu: 2000m
+            cpu: 1500m
             memory: 2Gi
         volumeMounts:
         - name: yb-master-data
@@ -75,6 +76,193 @@ spec:
       volumes:
       - name: yb-master-data
         emptyDir: {}
+
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: create-vaultadmin-user
+  namespace: vault
+spec:
+  backoffLimit: 1
+  template:
+    spec:
+      restartPolicy: Never
+      serviceAccountName: default
+      volumes:
+        - name: vault-bin
+          emptyDir: {}
+        - name: shared-creds
+          persistentVolumeClaim:
+            claimName: vault-creds-pvc
+        - name: root-token
+          secret:
+            secretName: vault-root-token
+        - name: kubectl-bin
+          emptyDir: {}
+      initContainers:
+        - name: inject-vault
+          image: hashicorp/vault:1.15.4
+          command: ["/bin/sh", "-c"]
+          args:
+            - cp /bin/vault /vault-bin/vault && chmod +x /vault-bin/vault
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+        - name: load-kubectl
+          image: alpine/k8s:1.31.4
+          command: ["sh", "-c"]
+          args:
+            - cp /usr/bin/kubectl /kubectl-bin/kubectl && chmod +x /kubectl-bin/kubectl
+          volumeMounts:
+            - name: kubectl-bin
+              mountPath: /kubectl-bin
+      containers:
+        - name: create-user
+          image: yugabytedb/yugabyte:latest
+          command: ["/bin/bash", "-c"]
+          args:
+            - |
+              #!/bin/sh
+              set -euo pipefail
+              export PATH=$PATH:/home/yugabyte/bin
+              echo "🔐 Configuring Vault DB secrets engine..."
+
+              PGHOST=yb-tserver-service.yugabyte.svc.cluster.local
+              PGPORT=5433
+
+              echo "⏳ Waiting for YugabyteDB to be ready at ${PGHOST}:${PGPORT}..."
+              while true; do
+                (echo > /dev/tcp/${PGHOST}/${PGPORT}) >/dev/null 2>&1 && break
+                echo "🔄 Still waiting for Yugabyte..."
+                sleep 5
+              done
+              echo "✅ YugabyteDB is available."
+
+              export PATH=$PATH:/vault-bin
+              export VAULT_ADDR=http://vault.vault.svc.cluster.local:8200
+              export VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
+
+              vault secrets enable -path=yugabyte-db database || true
+
+              STRONG_PWD="$(head -c 64 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 24)"
+              echo "📌 Creating 'vaultadmin' with password: $STRONG_PWD"
+              vault kv put secret/vaultadmin value="$STRONG_PWD"
+
+              echo "🔐 Creating/updating Kubernetes secret..."
+              cat <<EOF | kubectl apply -f - 
+              apiVersion: v1
+              kind: Secret
+              metadata:
+                name: pgweb-secret
+                namespace: yugabyte
+              type: Opaque
+              stringData:
+                PGWEB_USER: vaultadmin
+                PGWEB_PASS: $STRONG_PWD
+              EOF
+
+              echo "🔐 Creating or updating 'vaultadmin'..."
+              while true; do
+                ROLE_EXISTS=$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_roles WHERE rolname = 'vaultadmin'" || true)
+                if [ "$ROLE_EXISTS" = "1" ]; then
+                  echo "🔄 Role 'vaultadmin' exists, altering..."
+                  ALTER_SQL="ALTER ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;"
+                else
+                  echo "🆕 Creating role 'vaultadmin'..."
+                  ALTER_SQL="CREATE ROLE vaultadmin WITH LOGIN PASSWORD '$STRONG_PWD' CREATEROLE CREATEDB;"
+                fi
+
+                if echo "$ALTER_SQL" | ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte; then
+                  echo "✅ Role 'vaultadmin' created/updated"
+                else
+                  echo "❌ Failed to create/alter role 'vaultadmin'"
+                  sleep 3
+                  continue
+                fi
+
+                echo "🔧 Granting privileges on 'yugabyte' DB..."
+                if ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c "GRANT ALL PRIVILEGES ON DATABASE yugabyte TO vaultadmin;"; then
+                  echo "✅ Privileges granted"
+                  break
+                else
+                  echo "❌ Failed to grant privileges. Retrying..."
+                  sleep 3
+                fi
+              done
+
+              echo "🕒 Waiting for 'vaultadmin' to be available for login..."
+              while true; do
+                if PGPASSWORD="$STRONG_PWD" ysqlsh -h "$PGHOST" -p "$PGPORT" -U vaultadmin -d yugabyte -c '\q' >/dev/null 2>&1; then
+                  echo "✅ vaultadmin is ready."
+                  break
+                fi
+                echo "🔁 Waiting for vaultadmin login..."
+                sleep 3
+              done
+
+              echo "🔍 Verifying vaultadmin role attributes..."
+              ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c "SELECT rolname, rolsuper, rolcreaterole, rolcreatedb FROM pg_roles WHERE rolname='vaultadmin';"
+
+              echo "📦 Checking for personal vaultadmin DB..."
+              DB_EXISTS=$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -tAc "SELECT 1 FROM pg_database WHERE datname='vaultadmin'")
+              if [ "$DB_EXISTS" != "1" ]; then
+                echo "📦 Creating DB 'vaultadmin'..."
+                ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c "CREATE DATABASE vaultadmin"
+              else
+                echo "✅ Database 'vaultadmin' exists."
+              fi
+
+              echo "🛠️ Writing Vault DB config and roles..."
+              vault write yugabyte-db/config/yugabyte \
+                plugin_name=postgresql-database-plugin \
+                allowed_roles="*" \
+                connection_url="postgresql://{{username}}:{{password}}@$PGHOST:$PGPORT/yugabyte?sslmode=disable" \
+                username="vaultadmin" \
+                password="$STRONG_PWD" \
+                max_open_connections=40 \
+                max_idle_connections=0 \
+                max_connection_lifetime="0s"
+
+              echo "Granting SUPERUSER to vaultadmin (idempotent)..."
+              if [ "$(/home/yugabyte/bin/ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -Atc \
+                    "select case when exists (select 1 from pg_roles where rolname='vaultadmin' and rolsuper) then 1 else 0 end")" != "1" ]; then
+                /home/yugabyte/bin/ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -v ON_ERROR_STOP=1 \
+                  -c "ALTER ROLE vaultadmin SUPERUSER;"
+              fi
+              echo "✅ vaultadmin is SUPERUSER"
+
+              # now disable the yugabyte account
+              while true; do
+                echo "Disabling yugabyte superuser account..."
+                if ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c "ALTER USER yugabyte WITH NOLOGIN;"; then
+                  echo "✅ Yugabyte superuser account disabled."
+                  break
+                else
+                  echo "❌ Failed to disable account, retrying in 2 seconds..."
+                  sleep 2
+                fi
+              done
+
+              echo "✅ Vault DB secrets engine setup complete."
+          resources:
+            requests:
+              cpu: 100m
+              memory: 128Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
+          volumeMounts:
+            - name: vault-bin
+              mountPath: /vault-bin
+            - name: shared-creds
+              mountPath: /shared-creds
+            - name: root-token
+              mountPath: /vault-token
+              readOnly: true
+            - name: kubectl-bin
+              mountPath: /usr/local/bin
+
 ---
 # YugabyteDB Master Service
 apiVersion: v1
@@ -90,10 +278,10 @@ spec:
     name: http
   - port: 7100
     name: rpc
-  clusterIP: None
   selector:
     app: yugabyte
     component: yb-master
+
 ---
 # YugabyteDB TServer StatefulSet
 apiVersion: apps/v1
@@ -105,7 +293,7 @@ metadata:
     app: yugabyte
 spec:
   serviceName: yb-tserver-service
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: yugabyte
@@ -116,17 +304,6 @@ spec:
         app: yugabyte
         component: yb-tserver
     spec:
-      affinity:
-        podAntiAffinity:
-          preferredDuringSchedulingIgnoredDuringExecution:
-          - weight: 100
-            podAffinityTerm:
-              labelSelector:
-                matchExpressions:
-                - key: component
-                  operator: In
-                  values: ["yb-tserver"]
-              topologyKey: kubernetes.io/hostname
       containers:
       - name: yb-tserver
         image: yugabytedb/yugabyte:latest
@@ -135,8 +312,14 @@ spec:
           - "--fs_data_dirs=/mnt/data"
           - "--tserver_master_addrs=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
           - "--rpc_bind_addresses=$(POD_IP):9100"
-          - "--yb_enable_read_committed_isolation=true"
+          # --- REQUIRED: advisory locks + preview flag allowed ---
+          - "--ysql_yb_enable_advisory_locks=true"
+          - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
           - "--cdc_send_null_before_image_if_not_exists=true"
+          # --- OPTIONAL: YSQL tweaks (uncomment as needed) ---
+          # - "--ysql_max_connections=200"
+          # - "--ysql_enable_packed_row=true"
+          # - "--ysql_pg_conf_csv=deadlock_timeout=2s"
         env:
         - name: POD_IP
           valueFrom:
@@ -166,17 +349,33 @@ spec:
           periodSeconds: 10
           failureThreshold: 12
         livenessProbe:
-          httpGet:
-            path: /api/v1/tablet-servers
-            port: http
+          tcpSocket:
+            port: ysql
           initialDelaySeconds: 60
           periodSeconds: 20
           failureThreshold: 6
       volumes:
       - name: yb-tserver-data
         emptyDir: {}
+
 ---
-# YugabyteDB TServer Service
+apiVersion: v1
+kind: Service
+metadata:
+  name: yb-master
+  namespace: yugabyte
+spec:
+  clusterIP: None
+  selector:
+    app: yugabyte
+    component: yb-master
+  ports:
+  - name: rpc
+    port: 7100
+    targetPort: 7100
+
+---
+# YugabyteDB TServer Service (headless)
 apiVersion: v1
 kind: Service
 metadata:
@@ -197,23 +396,7 @@ spec:
   selector:
     app: yugabyte
     component: yb-tserver
----
-apiVersion: v1
-kind: ConfigMap
-metadata:
-  name: yugabyte-app-accounts
-  namespace: yugabyte
-data:
-  users.sql: |
-    CREATE ROLE app1 WITH LOGIN PASSWORD 'changeme1';
-    GRANT CONNECT ON DATABASE yugabyte TO app1;
-    GRANT USAGE ON SCHEMA public TO app1;
-    GRANT SELECT, INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public TO app1;
 
-    CREATE ROLE app2 WITH LOGIN PASSWORD 'changeme2';
-    GRANT CONNECT ON DATABASE yugabyte TO app2;
-    GRANT USAGE ON SCHEMA public TO app2;
-    GRANT SELECT ON ALL TABLES IN SCHEMA public TO app2;
 ---
 apiVersion: v1
 kind: Secret
@@ -225,6 +408,7 @@ stringData:
   client-id: "<path:secret/data/yugabyte-deployment-oauth2-client-id#value>"
   client-secret: "<path:secret/data/yugabyte-deployment-oauth2-client-secret#value>"
   cookie-secret: "<path:secret/data/yugabyte-deployment-oauth2-cookie-secret#value>"
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -249,12 +433,12 @@ spec:
           args:
             - --http-address=0.0.0.0:4180
             - --upstream=http://yb-master-service.yugabyte.svc.cluster.local:7000
-            - --provider=github  # Or github, oidc, etc.
+            - --provider=github
             - --email-domain=*
             - --client-id=$(OAUTH2_CLIENT_ID)
             - --client-secret=$(OAUTH2_CLIENT_SECRET)
             - --cookie-secret=$(OAUTH2_COOKIE_SECRET)
-            - --redirect-url=https://yugabyte.suncoast.systems/oauth2/callback
+            - --redirect-url=https://yugabyte.teleport.app.suncoast.systems/oauth2/callback
             - --scope=user:email,read:org
             - --cookie-secure=true
             - --allowed-group=dotcomrow:yugabyte_gui_users
@@ -283,12 +467,23 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: oauth2-proxy-yugabyte
   namespace: yugabyte
+  annotations:
+    teleport.dev/name: "yugabyte-gui"
+    teleport.dev/protocol: "http"
+    teleport.dev/public-addr: "yugabyte.teleport.app.suncoast.systems"
+    teleport.dev/description: "Yugabyte GUI Service"
+  labels:
+    app: yugabyte-gui
+    app.kubernetes.io/name: yugabyte-gui
+    app.kubernetes.io/component: yugabyte-database-ui
+    teleport.dev/enroll: "true"
 spec:
   selector:
     app: oauth2-proxy
@@ -298,24 +493,7 @@ spec:
       targetPort: 4180
       protocol: TCP
       name: http
----
-apiVersion: apisix.apache.org/v2
-kind: ApisixRoute
-metadata:
-  name: yugabyte-gui
-  namespace: yugabyte
-spec:
-  ingressClassName: apisix
-  http:
-    - name: yugabyte-gui
-      match:
-        hosts:
-          - yugabyte.suncoast.systems
-        paths:
-          - /*
-      backends:
-        - serviceName: oauth2-proxy-yugabyte
-          servicePort: 4180
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -332,44 +510,30 @@ spec:
       labels:
         app: pgweb
     spec:
-      initContainers:
-      - name: wait-for-yugabyte
-        image: busybox:1.35
-        command: ['sh', '-c']
-        args:
-        - |
-          echo "Waiting for YugabyteDB to be ready..."
-          until nc -z yb-tserver-service.yugabyte.svc.cluster.local 5433; do
-            echo "YugabyteDB not ready yet, waiting..."
-            sleep 5
-          done
-          echo "YugabyteDB is ready!"
       containers:
         - name: pgweb
           image: sosedoff/pgweb
-          args:
-            - --bind=0.0.0.0
-            - --listen=8081
-            - --host=yb-tserver-service.yugabyte.svc.cluster.local
-            - --port=5433
-            - --user=yugabyte
-            - --url=postgres://yugabyte@yb-tserver-service.yugabyte.svc.cluster.local:5433/yugabyte?sslmode=disable
+          env:
+            - name: PGWEB_USER
+              valueFrom:
+                secretKeyRef:
+                  name: pgweb-secret
+                  key: PGWEB_USER
+            - name: PGWEB_PASS
+              valueFrom:
+                secretKeyRef:
+                  name: pgweb-secret
+                  key: PGWEB_PASS
+          command:
+            - /bin/sh
+            - -c
+            - |
+              exec pgweb \
+                --bind=0.0.0.0 \
+                --listen=8081 \
+                --url=postgres://$PGWEB_USER:$PGWEB_PASS@yb-tserver-service.yugabyte.svc.cluster.local:5433/yugabyte?sslmode=disable
           ports:
             - containerPort: 8081
-          readinessProbe:
-            httpGet:
-              path: /
-              port: 8081
-            initialDelaySeconds: 10
-            periodSeconds: 5
-            failureThreshold: 6
-          livenessProbe:
-            httpGet:
-              path: /
-              port: 8081
-            initialDelaySeconds: 30
-            periodSeconds: 10
-            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
@@ -377,6 +541,7 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+
 ---
 apiVersion: v1
 kind: Service
@@ -391,6 +556,7 @@ spec:
       targetPort: 8081
       protocol: TCP
       name: http
+
 ---
 apiVersion: apps/v1
 kind: Deployment
@@ -420,7 +586,7 @@ spec:
             - --client-id=$(OAUTH2_CLIENT_ID)
             - --client-secret=$(OAUTH2_CLIENT_SECRET)
             - --cookie-secret=$(OAUTH2_COOKIE_SECRET)
-            - --redirect-url=https://pgweb.suncoast.systems/oauth2/callback
+            - --redirect-url=https://pgweb.teleport.app.suncoast.systems/oauth2/callback
             - --scope=user:email,read:org
             - --cookie-secure=true
             - --allowed-group=dotcomrow:pgweb_users
@@ -449,12 +615,23 @@ spec:
             limits:
               cpu: 500m
               memory: 256Mi
+
 ---
 apiVersion: v1
 kind: Service
 metadata:
   name: oauth2-proxy-pgweb
   namespace: yugabyte
+  annotations:
+    teleport.dev/name: "pgweb"
+    teleport.dev/protocol: "http"
+    teleport.dev/public-addr: "pgweb.teleport.app.suncoast.systems"
+    teleport.dev/description: "PGWeb Service"
+  labels:
+    app: pgweb
+    app.kubernetes.io/name: pgweb
+    app.kubernetes.io/component: postgres-web-ui
+    teleport.dev/enroll: "true"
 spec:
   selector:
     app: oauth2-proxy
@@ -463,29 +640,7 @@ spec:
     - port: 4180
       targetPort: 4180
       name: http
----
-apiVersion: apisix.apache.org/v2
-kind: ApisixRoute
-metadata:
-  name: pgweb
-  namespace: yugabyte
-spec:
-  ingressClassName: apisix
-  http:
-    - name: pgweb-route
-      match:
-        hosts:
-          - pgweb.suncoast.systems
-        paths:
-          - /*
-      backends:
-        - serviceName: oauth2-proxy-pgweb
-          servicePort: 4180
-      plugins:
-        - name: proxy-rewrite
-          enable: true
-          config:
-            regex_uri: ["^/pgweb(/.*)?$", "/$1"]
+
 ---
 apiVersion: v1
 kind: Secret
