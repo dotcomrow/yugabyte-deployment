@@ -7,4 +7,3 @@ metadata:
   annotations:
     linkerd.io/inject: disabled
     field.cattle.io/projectId: local:applications
-    scheduler.alpha.kubernetes.io/node-selector: "dedicated=etcd-node"

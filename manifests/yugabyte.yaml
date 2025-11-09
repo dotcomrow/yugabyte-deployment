@@ -18,6 +18,17 @@ spec:
         app: yugabyte
         component: yb-master
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values: ["yb-master"]
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: yb-master
         image: yugabytedb/yugabyte:latest
@@ -105,6 +116,17 @@ spec:
         app: yugabyte
         component: yb-tserver
     spec:
+      affinity:
+        podAntiAffinity:
+          preferredDuringSchedulingIgnoredDuringExecution:
+          - weight: 100
+            podAffinityTerm:
+              labelSelector:
+                matchExpressions:
+                - key: component
+                  operator: In
+                  values: ["yb-tserver"]
+              topologyKey: kubernetes.io/hostname
       containers:
       - name: yb-tserver
         image: yugabytedb/yugabyte:latest
