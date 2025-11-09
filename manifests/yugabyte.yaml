@@ -332,6 +332,18 @@ spec:
       labels:
         app: pgweb
     spec:
+      initContainers:
+      - name: wait-for-yugabyte
+        image: busybox:1.35
+        command: ['sh', '-c']
+        args:
+        - |
+          echo "Waiting for YugabyteDB to be ready..."
+          until nc -z yb-tserver-service.yugabyte.svc.cluster.local 5433; do
+            echo "YugabyteDB not ready yet, waiting..."
+            sleep 5
+          done
+          echo "YugabyteDB is ready!"
       containers:
         - name: pgweb
           image: sosedoff/pgweb
@@ -344,6 +356,20 @@ spec:
             - --url=postgres://yugabyte@yb-tserver-service.yugabyte.svc.cluster.local:5433/yugabyte?sslmode=disable
           ports:
             - containerPort: 8081
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            failureThreshold: 6
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 8081
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            failureThreshold: 3
           resources:
             requests:
               cpu: 100m
