@@ -34,17 +34,33 @@ spec:
               fieldPath: status.podIP
         ports:
         - containerPort: 7000
+          name: http
         - containerPort: 7100
+          name: rpc
         resources:
           requests:
             cpu: 500m
             memory: 512Mi
           limits:
-            cpu: 2
+            cpu: 2000m
             memory: 2Gi
         volumeMounts:
         - name: yb-master-data
           mountPath: /mnt/data
+        readinessProbe:
+          httpGet:
+            path: /api/v1/masters
+            port: http
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 12
+        livenessProbe:
+          httpGet:
+            path: /api/v1/masters
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          failureThreshold: 6
       volumes:
       - name: yb-master-data
         emptyDir: {}
@@ -63,6 +79,7 @@ spec:
     name: http
   - port: 7100
     name: rpc
+  clusterIP: None
   selector:
     app: yugabyte
     component: yb-master
@@ -97,6 +114,7 @@ spec:
           - "--tserver_master_addrs=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
           - "--rpc_bind_addresses=$(POD_IP):9100"
           - "--yb_enable_read_committed_isolation=true"
+          - "--cdc_send_null_before_image_if_not_exists=true"
         env:
         - name: POD_IP
           valueFrom:
@@ -104,19 +122,34 @@ spec:
               fieldPath: status.podIP
         ports:
         - containerPort: 9000
+          name: http
         - containerPort: 9100
+          name: rpc
         - containerPort: 5433
           name: ysql
         resources:
           requests:
-            cpu: 500m
-            memory: 512Mi
-          limits:
-            cpu: 2
+            cpu: 1500m
             memory: 2Gi
+          limits:
+            cpu: 2000m
+            memory: 4Gi
         volumeMounts:
         - name: yb-tserver-data
           mountPath: /mnt/data
+        readinessProbe:
+          tcpSocket:
+            port: ysql
+          initialDelaySeconds: 15
+          periodSeconds: 10
+          failureThreshold: 12
+        livenessProbe:
+          httpGet:
+            path: /api/v1/tablet-servers
+            port: http
+          initialDelaySeconds: 60
+          periodSeconds: 20
+          failureThreshold: 6
       volumes:
       - name: yb-tserver-data
         emptyDir: {}
