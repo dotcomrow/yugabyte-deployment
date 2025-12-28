@@ -239,8 +239,14 @@ spec:
               echo "Granting SUPERUSER to vaultadmin (idempotent)..."
               if [ "$(/home/yugabyte/bin/ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -Atc \
                     "select case when exists (select 1 from pg_roles where rolname='vaultadmin' and rolsuper) then 1 else 0 end")" != "1" ]; then
-                /home/yugabyte/bin/ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -v ON_ERROR_STOP=1 \
-                  -c "ALTER ROLE vaultadmin SUPERUSER;"
+                while true; do
+                  if /home/yugabyte/bin/ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -v ON_ERROR_STOP=1 \
+                    -c "ALTER ROLE vaultadmin SUPERUSER;"; then
+                    break
+                  fi
+                  echo "❌ Failed to grant SUPERUSER, retrying in 3 seconds..."
+                  sleep 3
+                done
               fi
               echo "✅ vaultadmin is SUPERUSER"
 
