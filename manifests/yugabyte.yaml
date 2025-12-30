@@ -1,7 +1,7 @@
 # =============================================================================
 # YugabyteDB (advisory locks enabled for PG compatibility)
 # - Enable advisory locks on BOTH master and tserver.
-# - Pin to v2025.1.0.0 which includes advisory locks (TP/preview).
+# - Pin to the current running image digest for consistency across restarts.
 # =============================================================================
 
 apiVersion: apps/v1
@@ -12,7 +12,7 @@ metadata:
   labels:
     app: yugabyte
 spec:
-  serviceName: yb-master-service
+  serviceName: yb-master
   replicas: 3
   selector:
     matchLabels:
@@ -35,13 +35,14 @@ spec:
                   operator: In
                   values: ["yb-master"]
               topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 120
       containers:
       - name: yb-master
-        image: yugabytedb/yugabyte:latest
+        image: yugabytedb/yugabyte@sha256:f1b868431c9f71013f451df8cc63c59886568bb1254e4cb6f98de14d0232a3ad
         command: ["/home/yugabyte/bin/yb-master"]
         args:
           - "--fs_data_dirs=/mnt/data"
-          - "--master_addresses=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
+          - "--master_addresses=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100,yb-master-2.yb-master.yugabyte.svc.cluster.local:7100"
           - "--rpc_bind_addresses=$(POD_IP):7100"
           # --- REQUIRED for advisory locks (enable + allow preview flag) ---
           - "--ysql_yb_enable_advisory_locks=true"
@@ -61,15 +62,31 @@ spec:
           name: http
         - containerPort: 7100
           name: rpc
+        resources:
+          requests:
+            cpu: 78m
+            memory: "442809964"
+          limits:
+            cpu: 1000m
+            memory: 2Gi
         volumeMounts:
         - name: yb-master-data
           mountPath: /mnt/data
+        startupProbe:
+          httpGet:
+            path: /api/v1/masters
+            port: http
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
         readinessProbe:
           httpGet:
             path: /api/v1/masters
             port: http
           initialDelaySeconds: 15
           periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 12
         livenessProbe:
           httpGet:
@@ -77,10 +94,17 @@ spec:
             port: http
           initialDelaySeconds: 60
           periodSeconds: 20
+          timeoutSeconds: 5
           failureThreshold: 6
-      volumes:
-      - name: yb-master-data
-        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: yb-master-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 10Gi
 
 ---
 apiVersion: batch/v1
@@ -111,6 +135,13 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - cp /bin/vault /vault-bin/vault && chmod +x /vault-bin/vault
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
           volumeMounts:
             - name: vault-bin
               mountPath: /vault-bin
@@ -119,12 +150,19 @@ spec:
           command: ["sh", "-c"]
           args:
             - cp /usr/bin/kubectl /kubectl-bin/kubectl && chmod +x /kubectl-bin/kubectl
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
           volumeMounts:
             - name: kubectl-bin
               mountPath: /kubectl-bin
       containers:
         - name: create-user
-          image: yugabytedb/yugabyte:latest
+          image: yugabytedb/yugabyte@sha256:f1b868431c9f71013f451df8cc63c59886568bb1254e4cb6f98de14d0232a3ad
           command: ["/bin/bash", "-c"]
           args:
             - |
@@ -256,6 +294,13 @@ spec:
               done
 
               echo "✅ Vault DB secrets engine setup complete."
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 512Mi
           volumeMounts:
             - name: vault-bin
               mountPath: /vault-bin
@@ -319,13 +364,14 @@ spec:
                   operator: In
                   values: ["yb-tserver"]
               topologyKey: kubernetes.io/hostname
+      terminationGracePeriodSeconds: 120
       containers:
       - name: yb-tserver
-        image: yugabytedb/yugabyte:latest
+        image: yugabytedb/yugabyte@sha256:f1b868431c9f71013f451df8cc63c59886568bb1254e4cb6f98de14d0232a3ad
         command: ["/home/yugabyte/bin/yb-tserver"]
         args:
           - "--fs_data_dirs=/mnt/data"
-          - "--tserver_master_addrs=yb-master-0.yb-master-service:7100,yb-master-1.yb-master-service:7100,yb-master-2.yb-master-service:7100"
+          - "--tserver_master_addrs=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100,yb-master-2.yb-master.yugabyte.svc.cluster.local:7100"
           - "--rpc_bind_addresses=$(POD_IP):9100"
           # --- REQUIRED: advisory locks + preview flag allowed ---
           - "--ysql_yb_enable_advisory_locks=true"
@@ -348,24 +394,72 @@ spec:
           name: rpc
         - containerPort: 5433
           name: ysql
+        resources:
+          requests:
+            cpu: 1238m
+            memory: "2823238195"
+          limits:
+            cpu: 4000m
+            memory: 8Gi
         volumeMounts:
         - name: yb-tserver-data
           mountPath: /mnt/data
+        startupProbe:
+          tcpSocket:
+            port: ysql
+          initialDelaySeconds: 10
+          periodSeconds: 10
+          timeoutSeconds: 5
+          failureThreshold: 30
         readinessProbe:
           tcpSocket:
             port: ysql
           initialDelaySeconds: 15
           periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 12
         livenessProbe:
           tcpSocket:
             port: ysql
           initialDelaySeconds: 60
           periodSeconds: 20
+          timeoutSeconds: 5
           failureThreshold: 6
-      volumes:
-      - name: yb-tserver-data
-        emptyDir: {}
+  volumeClaimTemplates:
+  - metadata:
+      name: yb-tserver-data
+    spec:
+      accessModes:
+      - ReadWriteOnce
+      resources:
+        requests:
+          storage: 50Gi
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: yb-master-pdb
+  namespace: yugabyte
+spec:
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: yugabyte
+      component: yb-master
+
+---
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: yb-tserver-pdb
+  namespace: yugabyte
+spec:
+  minAvailable: 1
+  selector:
+    matchLabels:
+      app: yugabyte
+      component: yb-tserver
 
 ---
 apiVersion: v1
@@ -375,6 +469,7 @@ metadata:
   namespace: yugabyte
 spec:
   clusterIP: None
+  publishNotReadyAddresses: true
   selector:
     app: yugabyte
     component: yb-master
@@ -467,6 +562,13 @@ spec:
                 secretKeyRef:
                   name: oauth2-proxy-creds
                   key: cookie-secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           ports:
             - containerPort: 4180
 
@@ -534,6 +636,13 @@ spec:
                 --bind=0.0.0.0 \
                 --listen=8081 \
                 --url=postgres://$PGWEB_USER:$PGWEB_PASS@yb-tserver-service.yugabyte.svc.cluster.local:5433/yugabyte?sslmode=disable
+          resources:
+            requests:
+              cpu: 50m
+              memory: 128Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           ports:
             - containerPort: 8081
 
@@ -601,6 +710,13 @@ spec:
                 secretKeyRef:
                   name: pgweb-oauth2-proxy-creds
                   key: cookie-secret
+          resources:
+            requests:
+              cpu: 50m
+              memory: 64Mi
+            limits:
+              cpu: 200m
+              memory: 256Mi
           ports:
             - containerPort: 4180
 
