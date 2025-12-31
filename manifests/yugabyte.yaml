@@ -82,27 +82,27 @@ spec:
           mountPath: /mnt/data
         startupProbe:
           httpGet:
-            path: /api/v1/masters
+            path: /api/v1/health-check
             port: http
           initialDelaySeconds: 10
-          periodSeconds: 20
-          timeoutSeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 30
         readinessProbe:
           httpGet:
-            path: /api/v1/masters
+            path: /api/v1/health-check
             port: http
           initialDelaySeconds: 15
-          periodSeconds: 20
-          timeoutSeconds: 20
+          periodSeconds: 10
+          timeoutSeconds: 5
           failureThreshold: 12
         livenessProbe:
           httpGet:
-            path: /api/v1/masters
+            path: /api/v1/health-check
             port: http
           initialDelaySeconds: 60
           periodSeconds: 20
-          timeoutSeconds: 20
+          timeoutSeconds: 5
           failureThreshold: 6
   volumeClaimTemplates:
   - metadata:
@@ -543,7 +543,7 @@ type: Opaque
 stringData:
   client-id: "<path:secret/data/yugabyte-deployment-oauth2-client-id#value>"
   client-secret: "<path:secret/data/yugabyte-deployment-oauth2-client-secret#value>"
-  cookie-secret: "<path:secret/data/yugabyte-deployment-oauth2-cookie-secret#value>"
+  cookie-secret: "<path:secret/data/pgweb-oauth2-cookie-secret#value>"
 
 ---
 apiVersion: apps/v1
