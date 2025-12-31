@@ -85,16 +85,16 @@ spec:
             path: /api/v1/masters
             port: http
           initialDelaySeconds: 10
-          periodSeconds: 10
-          timeoutSeconds: 5
+          periodSeconds: 20
+          timeoutSeconds: 20
           failureThreshold: 30
         readinessProbe:
           httpGet:
             path: /api/v1/masters
             port: http
           initialDelaySeconds: 15
-          periodSeconds: 10
-          timeoutSeconds: 5
+          periodSeconds: 20
+          timeoutSeconds: 20
           failureThreshold: 12
         livenessProbe:
           httpGet:
@@ -102,7 +102,7 @@ spec:
             port: http
           initialDelaySeconds: 60
           periodSeconds: 20
-          timeoutSeconds: 5
+          timeoutSeconds: 20
           failureThreshold: 6
   volumeClaimTemplates:
   - metadata:
