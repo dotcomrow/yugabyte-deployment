@@ -14,7 +14,7 @@ metadata:
 spec:
   serviceName: yb-master
   podManagementPolicy: Parallel
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: yugabyte
@@ -43,11 +43,11 @@ spec:
         command: ["/home/yugabyte/bin/yb-master"]
         args:
           - "--fs_data_dirs=/mnt/data"
-          - "--master_addresses=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100"
+          - "--master_addresses=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100"
           - "--rpc_bind_addresses=$(POD_IP):7100"
           - "--server_broadcast_addresses=$(POD_NAME).yb-master.yugabyte.svc.cluster.local:7100"
           - "--use_private_ip=never"
-          - "--replication_factor=2"
+          - "--replication_factor=1"
           # --- REQUIRED for advisory locks (enable + allow preview flag) ---
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
@@ -350,7 +350,7 @@ metadata:
     app: yugabyte
 spec:
   serviceName: yb-tserver-service
-  replicas: 2
+  replicas: 1
   selector:
     matchLabels:
       app: yugabyte
@@ -379,7 +379,7 @@ spec:
         command: ["/home/yugabyte/bin/yb-tserver"]
         args:
           - "--fs_data_dirs=/mnt/data"
-          - "--tserver_master_addrs=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100"
+          - "--tserver_master_addrs=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100"
           - "--rpc_bind_addresses=0.0.0.0:9100"
           - "--server_broadcast_addresses=$(POD_NAME).yb-tserver-service.yugabyte.svc.cluster.local:9100"
           - "--use_private_ip=never"
@@ -456,7 +456,7 @@ metadata:
   name: yb-master-pdb
   namespace: yugabyte
 spec:
-  minAvailable: 1
+  minAvailable: 0
   selector:
     matchLabels:
       app: yugabyte
@@ -469,7 +469,7 @@ metadata:
   name: yb-tserver-pdb
   namespace: yugabyte
 spec:
-  minAvailable: 1
+  minAvailable: 0
   selector:
     matchLabels:
       app: yugabyte
