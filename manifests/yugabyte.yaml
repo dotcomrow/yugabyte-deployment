@@ -14,7 +14,7 @@ metadata:
 spec:
   serviceName: yb-master
   podManagementPolicy: Parallel
-  replicas: 3
+  replicas: 2
   selector:
     matchLabels:
       app: yugabyte
@@ -43,9 +43,10 @@ spec:
         command: ["/home/yugabyte/bin/yb-master"]
         args:
           - "--fs_data_dirs=/mnt/data"
-          - "--master_addresses=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100,yb-master-2.yb-master.yugabyte.svc.cluster.local:7100"
+          - "--master_addresses=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100"
           - "--rpc_bind_addresses=$(POD_IP):7100"
           - "--server_broadcast_addresses=$(POD_NAME).yb-master.yugabyte.svc.cluster.local:7100"
+          - "--replication_factor=2"
           # --- REQUIRED for advisory locks (enable + allow preview flag) ---
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
@@ -377,9 +378,9 @@ spec:
         command: ["/home/yugabyte/bin/yb-tserver"]
         args:
           - "--fs_data_dirs=/mnt/data"
-          - "--tserver_master_addrs=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100,yb-master-2.yb-master.yugabyte.svc.cluster.local:7100"
-          - "--rpc_bind_addresses=$(POD_IP):9100"
-          - "--server_broadcast_addresses=$(POD_IP):9100"
+          - "--tserver_master_addrs=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100"
+          - "--rpc_bind_addresses=0.0.0.0:9100"
+          - "--server_broadcast_addresses=$(POD_NAME).yb-tserver-service.yugabyte.svc.cluster.local:9100"
           # --- REQUIRED: advisory locks + preview flag allowed ---
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
@@ -453,7 +454,7 @@ metadata:
   name: yb-master-pdb
   namespace: yugabyte
 spec:
-  minAvailable: 2
+  minAvailable: 1
   selector:
     matchLabels:
       app: yugabyte
@@ -512,6 +513,23 @@ spec:
   selector:
     app: yugabyte
     component: yb-tserver
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: yb-ysql
+  namespace: yugabyte
+  labels:
+    app: yugabyte
+spec:
+  selector:
+    app: yugabyte
+    component: yb-tserver
+  ports:
+  - name: ysql
+    port: 5433
+    targetPort: 5433
 
 ---
 apiVersion: v1
@@ -644,10 +662,13 @@ spec:
             - /bin/sh
             - -c
             - |
-              exec pgweb \
+              until pgweb \
                 --bind=0.0.0.0 \
                 --listen=8081 \
-                --url=postgres://$PGWEB_USER:$PGWEB_PASS@yb-tserver-service.yugabyte.svc.cluster.local:5433/yugabyte?sslmode=disable
+                --url=postgres://$PGWEB_USER:$PGWEB_PASS@yb-ysql.yugabyte.svc.cluster.local:5433/yugabyte?sslmode=disable; do
+                echo "pgweb failed to connect; retrying in 5s" >&2
+                sleep 5
+              done
           resources:
             requests:
               cpu: 50m
