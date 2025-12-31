@@ -82,7 +82,7 @@ spec:
           mountPath: /mnt/data
         startupProbe:
           httpGet:
-            path: /api/v1/health-check
+            path: /api/v1/version
             port: http
           initialDelaySeconds: 10
           periodSeconds: 10
@@ -94,11 +94,11 @@ spec:
             port: http
           initialDelaySeconds: 15
           periodSeconds: 10
-          timeoutSeconds: 5
+          timeoutSeconds: 10
           failureThreshold: 12
         livenessProbe:
           httpGet:
-            path: /api/v1/health-check
+            path: /api/v1/version
             port: http
           initialDelaySeconds: 60
           periodSeconds: 20
