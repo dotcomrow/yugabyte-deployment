@@ -46,6 +46,7 @@ spec:
           - "--master_addresses=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100"
           - "--rpc_bind_addresses=$(POD_IP):7100"
           - "--server_broadcast_addresses=$(POD_NAME).yb-master.yugabyte.svc.cluster.local:7100"
+          - "--use_private_ip=never"
           - "--replication_factor=2"
           # --- REQUIRED for advisory locks (enable + allow preview flag) ---
           - "--ysql_yb_enable_advisory_locks=true"
@@ -381,6 +382,7 @@ spec:
           - "--tserver_master_addrs=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100"
           - "--rpc_bind_addresses=0.0.0.0:9100"
           - "--server_broadcast_addresses=$(POD_NAME).yb-tserver-service.yugabyte.svc.cluster.local:9100"
+          - "--use_private_ip=never"
           # --- REQUIRED: advisory locks + preview flag allowed ---
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
