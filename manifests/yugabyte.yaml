@@ -44,6 +44,7 @@ spec:
           - "--fs_data_dirs=/mnt/data"
           - "--master_addresses=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100,yb-master-2.yb-master.yugabyte.svc.cluster.local:7100"
           - "--rpc_bind_addresses=$(POD_IP):7100"
+          - "--server_broadcast_addresses=$(POD_NAME).yb-master.yugabyte.svc.cluster.local:7100"
           # --- REQUIRED for advisory locks (enable + allow preview flag) ---
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
@@ -57,6 +58,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         ports:
         - containerPort: 7000
           name: http
@@ -373,6 +378,7 @@ spec:
           - "--fs_data_dirs=/mnt/data"
           - "--tserver_master_addrs=yb-master-0.yb-master.yugabyte.svc.cluster.local:7100,yb-master-1.yb-master.yugabyte.svc.cluster.local:7100,yb-master-2.yb-master.yugabyte.svc.cluster.local:7100"
           - "--rpc_bind_addresses=$(POD_IP):9100"
+          - "--server_broadcast_addresses=$(POD_NAME).yb-tserver-service.yugabyte.svc.cluster.local:9100"
           # --- REQUIRED: advisory locks + preview flag allowed ---
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
@@ -387,6 +393,10 @@ spec:
           valueFrom:
             fieldRef:
               fieldPath: status.podIP
+        - name: POD_NAME
+          valueFrom:
+            fieldRef:
+              fieldPath: metadata.name
         ports:
         - containerPort: 9000
           name: http
