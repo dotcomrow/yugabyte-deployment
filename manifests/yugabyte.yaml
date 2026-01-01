@@ -15,6 +15,8 @@ spec:
   serviceName: yb-master
   podManagementPolicy: Parallel
   replicas: 1
+  updateStrategy:
+    type: OnDelete
   selector:
     matchLabels:
       app: yugabyte
@@ -351,6 +353,8 @@ metadata:
 spec:
   serviceName: yb-tserver-service
   replicas: 1
+  updateStrategy:
+    type: OnDelete
   selector:
     matchLabels:
       app: yugabyte
