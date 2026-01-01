@@ -17,6 +17,7 @@ spec:
   replicas: 1
   updateStrategy:
     type: OnDelete
+    rollingUpdate: null
   selector:
     matchLabels:
       app: yugabyte
@@ -355,6 +356,7 @@ spec:
   replicas: 1
   updateStrategy:
     type: OnDelete
+    rollingUpdate: null
   selector:
     matchLabels:
       app: yugabyte
