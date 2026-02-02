@@ -73,13 +73,6 @@ spec:
           name: http
         - containerPort: 7100
           name: rpc
-        resources:
-          requests:
-            cpu: 78m
-            memory: "442809964"
-          limits:
-            cpu: 1000m
-            memory: 2Gi
         volumeMounts:
         - name: yb-master-data
           mountPath: /mnt/data
@@ -146,13 +139,6 @@ spec:
           command: ["/bin/sh", "-c"]
           args:
             - cp /bin/vault /vault-bin/vault && chmod +x /vault-bin/vault
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
           volumeMounts:
             - name: vault-bin
               mountPath: /vault-bin
@@ -161,13 +147,6 @@ spec:
           command: ["sh", "-c"]
           args:
             - cp /usr/bin/kubectl /kubectl-bin/kubectl && chmod +x /kubectl-bin/kubectl
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 128Mi
           volumeMounts:
             - name: kubectl-bin
               mountPath: /kubectl-bin
@@ -305,13 +284,6 @@ spec:
               done
 
               echo "✅ Vault DB secrets engine setup complete."
-          resources:
-            requests:
-              cpu: 100m
-              memory: 256Mi
-            limits:
-              cpu: 500m
-              memory: 512Mi
           volumeMounts:
             - name: vault-bin
               mountPath: /vault-bin
@@ -414,13 +386,6 @@ spec:
           name: rpc
         - containerPort: 5433
           name: ysql
-        resources:
-          requests:
-            cpu: 1238m
-            memory: "2823238195"
-          limits:
-            cpu: 4000m
-            memory: 8Gi
         volumeMounts:
         - name: yb-tserver-data
           mountPath: /mnt/data
@@ -600,13 +565,6 @@ spec:
                 secretKeyRef:
                   name: oauth2-proxy-creds
                   key: cookie-secret
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 256Mi
           ports:
             - containerPort: 4180
 
@@ -677,13 +635,6 @@ spec:
                 echo "pgweb failed to connect; retrying in 5s" >&2
                 sleep 5
               done
-          resources:
-            requests:
-              cpu: 50m
-              memory: 128Mi
-            limits:
-              cpu: 200m
-              memory: 256Mi
           ports:
             - containerPort: 8081
 
@@ -751,13 +702,6 @@ spec:
                 secretKeyRef:
                   name: pgweb-oauth2-proxy-creds
                   key: cookie-secret
-          resources:
-            requests:
-              cpu: 50m
-              memory: 64Mi
-            limits:
-              cpu: 200m
-              memory: 256Mi
           ports:
             - containerPort: 4180
 
