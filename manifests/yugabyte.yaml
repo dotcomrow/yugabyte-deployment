@@ -363,7 +363,7 @@ spec:
       terminationGracePeriodSeconds: 120
       containers:
       - name: yb-tserver
-        image: yugabytedb/yugabyte@sha256:f1b868431c9f71013f451df8cc63c59886568bb1254e4cb6f98de14d0232a3ad
+        image: yugabytedb/yugabyte@sha256:fee547e2f32d84ffe02287c01f5ba03921312d6c1e540b955e3599ca79f5160d
         command: ["/home/yugabyte/bin/yb-tserver"]
         args:
           - "--fs_data_dirs=/mnt/data"
