@@ -6,4 +6,4 @@ metadata:
     app: yugabyte
   annotations:
     linkerd.io/inject: disabled
-    field.cattle.io/projectId: local:applications
+    field.cattle.io/projectId: local:infrastructure
