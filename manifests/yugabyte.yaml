@@ -73,6 +73,13 @@ spec:
           name: http
         - containerPort: 7100
           name: rpc
+        resources:
+          requests:
+            cpu: "1"
+            memory: "2Gi"
+          limits:
+            cpu: "2"
+            memory: "4Gi"
         volumeMounts:
         - name: yb-master-data
           mountPath: /mnt/data
@@ -396,6 +403,13 @@ spec:
           name: rpc
         - containerPort: 5433
           name: ysql
+        resources:
+          requests:
+            cpu: "2"
+            memory: "4Gi"
+          limits:
+            cpu: "4"
+            memory: "8Gi"
         volumeMounts:
         - name: yb-tserver-data
           mountPath: /mnt/data
