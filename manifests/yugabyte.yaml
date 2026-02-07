@@ -2,6 +2,7 @@
 # YugabyteDB (advisory locks enabled for PG compatibility)
 # - Enable advisory locks on BOTH master and tserver.
 # - Pin to the current running image digest for consistency across restarts.
+# - Keep MASTER and TSERVER on the same version (currently 2025.2.0.1).
 # =============================================================================
 
 apiVersion: apps/v1
@@ -42,7 +43,7 @@ spec:
       terminationGracePeriodSeconds: 120
       containers:
       - name: yb-master
-        image: yugabytedb/yugabyte@sha256:f1b868431c9f71013f451df8cc63c59886568bb1254e4cb6f98de14d0232a3ad
+        image: yugabytedb/yugabyte@sha256:fee547e2f32d84ffe02287c01f5ba03921312d6c1e540b955e3599ca79f5160d
         command: ["/home/yugabyte/bin/yb-master"]
         args:
           - "--fs_data_dirs=/mnt/data"
@@ -162,7 +163,7 @@ spec:
               mountPath: /kubectl-bin
       containers:
         - name: create-user
-          image: yugabytedb/yugabyte@sha256:f1b868431c9f71013f451df8cc63c59886568bb1254e4cb6f98de14d0232a3ad
+          image: yugabytedb/yugabyte@sha256:fee547e2f32d84ffe02287c01f5ba03921312d6c1e540b955e3599ca79f5160d
           command: ["/bin/bash", "-c"]
           args:
             - |
