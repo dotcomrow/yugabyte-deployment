@@ -119,6 +119,39 @@ spec:
           storage: 10Gi
 
 ---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: create-vaultadmin-user
+  namespace: vault
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: create-pgweb-secret
+  namespace: yugabyte
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get", "create", "update", "patch"]
+
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: create-pgweb-secret-from-vault
+  namespace: yugabyte
+subjects:
+  - kind: ServiceAccount
+    name: create-vaultadmin-user
+    namespace: vault
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: create-pgweb-secret
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -132,7 +165,7 @@ spec:
   template:
     spec:
       restartPolicy: Never
-      serviceAccountName: default
+      serviceAccountName: create-vaultadmin-user
       volumes:
         - name: vault-bin
           emptyDir: {}
