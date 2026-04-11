@@ -158,8 +158,9 @@ metadata:
   name: create-vaultadmin-user
   namespace: vault
   annotations:
-    argocd.argoproj.io/hook: PostSync
+    argocd.argoproj.io/hook: Sync
     argocd.argoproj.io/hook-delete-policy: BeforeHookCreation,HookSucceeded
+    argocd.argoproj.io/sync-wave: "1"
 spec:
   backoffLimit: 1
   template:
@@ -216,25 +217,12 @@ spec:
               done
               echo "✅ YugabyteDB is available."
 
-              echo "🔎 Checking if yugabyte login is disabled..."
-              LOGIN_ERR="$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c '\q' 2>&1 >/dev/null || true)"
-              if echo "$LOGIN_ERR" | grep -q 'role "yugabyte" is not permitted to log in'; then
-                echo "✅ yugabyte login is disabled; assuming setup already completed. Exiting."
-                exit 0
-              fi
-
               export PATH=$PATH:/vault-bin
               export VAULT_ADDR=http://vault.vault.svc.cluster.local:8200
               export VAULT_TOKEN=$(cat /vault-token/VAULT_TOKEN)
 
-              vault secrets enable -path=yugabyte-db database || true
-
-              STRONG_PWD="$(head -c 64 /dev/urandom | tr -dc 'A-Za-z0-9' | head -c 24)"
-              echo "📌 Creating 'vaultadmin' with password: $STRONG_PWD"
-              vault kv put secret/vaultadmin value="$STRONG_PWD"
-
-              echo "🔐 Creating/updating Kubernetes secret..."
-              cat <<EOF | kubectl apply -f - 
+              apply_pgweb_secret() {
+                cat <<EOF | kubectl apply -f -
               apiVersion: v1
               kind: Secret
               metadata:
@@ -245,6 +233,30 @@ spec:
                 PGWEB_USER: vaultadmin
                 PGWEB_PASS: $STRONG_PWD
               EOF
+              }
+
+              echo "🔎 Checking if yugabyte login is disabled..."
+              LOGIN_ERR="$(ysqlsh -h "$PGHOST" -p "$PGPORT" -U yugabyte -d yugabyte -c '\q' 2>&1 >/dev/null || true)"
+              if echo "$LOGIN_ERR" | grep -q 'role "yugabyte" is not permitted to log in'; then
+                echo "✅ yugabyte login is disabled; setup likely already completed."
+                STRONG_PWD="$(vault kv get -field=value secret/vaultadmin 2>/dev/null || true)"
+                if [ -z "$STRONG_PWD" ]; then
+                  echo "❌ Vault secret secret/vaultadmin not found; cannot recreate pgweb-secret."
+                  exit 1
+                fi
+                echo "🔐 Ensuring pgweb-secret exists from Vault value..."
+                apply_pgweb_secret
+                exit 0
+              fi
+
+              vault secrets enable -path=yugabyte-db database || true
+
+              STRONG_PWD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
+              echo "📌 Creating 'vaultadmin' password and storing in Vault..."
+              vault kv put secret/vaultadmin value="$STRONG_PWD"
+
+              echo "🔐 Creating/updating Kubernetes secret..."
+              apply_pgweb_secret
 
               echo "🔐 Creating or updating 'vaultadmin'..."
               while true; do
@@ -658,6 +670,8 @@ kind: Deployment
 metadata:
   name: pgweb
   namespace: yugabyte
+  annotations:
+    argocd.argoproj.io/sync-wave: "2"
 spec:
   replicas: 1
   selector:
