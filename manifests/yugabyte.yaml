@@ -251,7 +251,10 @@ spec:
 
               vault secrets enable -path=yugabyte-db database || true
 
-              STRONG_PWD="$(tr -dc 'A-Za-z0-9' </dev/urandom | head -c 24)"
+              STRONG_PWD=""
+              while [ "${#STRONG_PWD}" -lt 24 ]; do
+                STRONG_PWD="$(LC_ALL=C head -c 48 /dev/urandom | base64 | tr -dc 'A-Za-z0-9' | cut -c1-24)"
+              done
               echo "📌 Creating 'vaultadmin' password and storing in Vault..."
               vault kv put secret/vaultadmin value="$STRONG_PWD"
 
