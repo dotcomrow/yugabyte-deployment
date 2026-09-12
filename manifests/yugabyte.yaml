@@ -434,6 +434,8 @@ spec:
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
           - "--cdc_send_null_before_image_if_not_exists=true"
           - "--yb_enable_read_committed_isolation=true"
+          # Keep Yugabyte's memory tracker below the pod cgroup limit so it sheds load before kubelet OOMKills the process.
+          - "--memory_limit_hard_bytes=10737418240"
           # --- OPTIONAL: YSQL tweaks (uncomment as needed) ---
           # - "--ysql_max_connections=200"
           # - "--ysql_enable_packed_row=true"
