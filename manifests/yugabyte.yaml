@@ -18,7 +18,8 @@ spec:
   podManagementPolicy: Parallel
   replicas: 1
   updateStrategy:
-    type: RollingUpdate
+    type: OnDelete
+    rollingUpdate: null
   selector:
     matchLabels:
       app: yugabyte
