@@ -42,6 +42,32 @@ spec:
                   values: ["yb-master"]
               topologyKey: kubernetes.io/hostname
       terminationGracePeriodSeconds: 120
+      volumes:
+      - name: process-logs
+        emptyDir:
+          sizeLimit: 128Mi
+      initContainers:
+      - name: clear-persistent-process-logs
+        image: yugabytedb/yugabyte@sha256:fee547e2f32d84ffe02287c01f5ba03921312d6c1e540b955e3599ca79f5160d
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -euo pipefail
+            log_dir="/mnt/data/yb-data/master/logs"
+            if [[ -d "${log_dir}" ]]; then
+              find "${log_dir}" -xdev -mindepth 1 -maxdepth 1 \
+                \( -type f -o -type l \) -print -delete
+            fi
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+        volumeMounts:
+        - name: yb-master-data
+          mountPath: /mnt/data
       containers:
       - name: yb-master
         image: yugabytedb/yugabyte@sha256:fee547e2f32d84ffe02287c01f5ba03921312d6c1e540b955e3599ca79f5160d
@@ -57,8 +83,9 @@ spec:
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
           - "--yb_enable_read_committed_isolation=true"
-          # Rotate ordinary process logs before individual files become multi-gigabyte.
-          - "--max_log_size=100"
+          # Keep process logs out of the persistent data volume. Kubernetes rotates stdout.
+          - "--logtostderr=true"
+          - "--max_log_size=50"
           # --- OPTIONAL flags (leave commented until you need them) ---
           # - "--enable_ysql=true"
           # - "--ysql_num_shards_per_tserver=2"
@@ -87,6 +114,8 @@ spec:
         volumeMounts:
         - name: yb-master-data
           mountPath: /mnt/data
+        - name: process-logs
+          mountPath: /mnt/data/yb-data/master/logs
         startupProbe:
           httpGet:
             path: /api/v1/version
@@ -116,12 +145,12 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
           - |
-            log_dir="/mnt/data/yb-data/master/logs"
+            log_dir="/logs"
             while true; do
               if [[ -d "${log_dir}" ]]; then
-                find "${log_dir}" -xdev -type f -mmin +20160 -print -delete || true
+                find "${log_dir}" -xdev -type f -mmin +1440 -print -delete || true
               fi
-              sleep 21600
+              sleep 900
             done
         resources:
           requests:
@@ -131,8 +160,8 @@ spec:
             cpu: "100m"
             memory: "64Mi"
         volumeMounts:
-          - name: yb-master-data
-            mountPath: /mnt/data
+          - name: process-logs
+            mountPath: /logs
   volumeClaimTemplates:
   - metadata:
       name: yb-master-data
@@ -419,8 +448,7 @@ spec:
   serviceName: yb-tserver-service
   replicas: 1
   updateStrategy:
-    type: OnDelete
-    rollingUpdate: null
+    type: RollingUpdate
   selector:
     matchLabels:
       app: yugabyte
@@ -443,6 +471,32 @@ spec:
                   values: ["yb-tserver"]
               topologyKey: kubernetes.io/hostname
       terminationGracePeriodSeconds: 120
+      volumes:
+      - name: process-logs
+        emptyDir:
+          sizeLimit: 512Mi
+      initContainers:
+      - name: clear-persistent-process-logs
+        image: yugabytedb/yugabyte@sha256:fee547e2f32d84ffe02287c01f5ba03921312d6c1e540b955e3599ca79f5160d
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            set -euo pipefail
+            log_dir="/mnt/data/yb-data/tserver/logs"
+            if [[ -d "${log_dir}" ]]; then
+              find "${log_dir}" -xdev -mindepth 1 -maxdepth 1 \
+                \( -type f -o -type l \) -print -delete
+            fi
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+        volumeMounts:
+        - name: yb-tserver-data
+          mountPath: /mnt/data
       containers:
       - name: yb-tserver
         image: yugabytedb/yugabyte@sha256:fee547e2f32d84ffe02287c01f5ba03921312d6c1e540b955e3599ca79f5160d
@@ -460,8 +514,9 @@ spec:
           - "--yb_enable_read_committed_isolation=true"
           # Keep Yugabyte's memory tracker below the pod cgroup limit so it sheds load before kubelet OOMKills the process.
           - "--memory_limit_hard_bytes=10737418240"
-          # Rotate ordinary process logs before individual files become multi-gigabyte.
-          - "--max_log_size=100"
+          # Keep process logs out of the persistent data volume. Kubernetes rotates stdout.
+          - "--logtostderr=true"
+          - "--max_log_size=50"
           # --- OPTIONAL: YSQL tweaks (uncomment as needed) ---
           # - "--ysql_max_connections=200"
           # - "--ysql_enable_packed_row=true"
@@ -492,6 +547,8 @@ spec:
         volumeMounts:
         - name: yb-tserver-data
           mountPath: /mnt/data
+        - name: process-logs
+          mountPath: /mnt/data/yb-data/tserver/logs
         startupProbe:
           tcpSocket:
             port: ysql
@@ -518,12 +575,12 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
           - |
-            log_dir="/mnt/data/yb-data/tserver/logs"
+            log_dir="/logs"
             while true; do
               if [[ -d "${log_dir}" ]]; then
-                find "${log_dir}" -xdev -type f -mmin +20160 -print -delete || true
+                find "${log_dir}" -xdev -type f -mmin +1440 -print -delete || true
               fi
-              sleep 21600
+              sleep 900
             done
         resources:
           requests:
@@ -533,8 +590,8 @@ spec:
             cpu: "100m"
             memory: "64Mi"
         volumeMounts:
-          - name: yb-tserver-data
-            mountPath: /mnt/data
+          - name: process-logs
+            mountPath: /logs
   volumeClaimTemplates:
   - metadata:
       name: yb-tserver-data
