@@ -395,8 +395,7 @@ spec:
   serviceName: yb-tserver-service
   replicas: 1
   updateStrategy:
-    type: OnDelete
-    rollingUpdate: null
+    type: RollingUpdate
   selector:
     matchLabels:
       app: yugabyte
@@ -436,6 +435,8 @@ spec:
           - "--yb_enable_read_committed_isolation=true"
           # Keep Yugabyte's memory tracker below the pod cgroup limit so it sheds load before kubelet OOMKills the process.
           - "--memory_limit_hard_bytes=10737418240"
+          # Rotate ordinary process logs before individual files become multi-gigabyte.
+          - "--max_log_size=100"
           # --- OPTIONAL: YSQL tweaks (uncomment as needed) ---
           # - "--ysql_max_connections=200"
           # - "--ysql_enable_packed_row=true"
@@ -487,6 +488,28 @@ spec:
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 6
+      - name: process-log-cleaner
+        image: yugabytedb/yugabyte@sha256:fee547e2f32d84ffe02287c01f5ba03921312d6c1e540b955e3599ca79f5160d
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            log_dir="/mnt/data/yb-data/tserver/logs"
+            while true; do
+              if [[ -d "${log_dir}" ]]; then
+                find "${log_dir}" -xdev -type f -mmin +20160 -print -delete || true
+              fi
+              sleep 21600
+            done
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+        volumeMounts:
+          - name: yb-tserver-data
+            mountPath: /mnt/data
   volumeClaimTemplates:
   - metadata:
       name: yb-tserver-data
