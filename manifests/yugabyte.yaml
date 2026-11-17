@@ -18,8 +18,7 @@ spec:
   podManagementPolicy: Parallel
   replicas: 1
   updateStrategy:
-    type: OnDelete
-    rollingUpdate: null
+    type: RollingUpdate
   selector:
     matchLabels:
       app: yugabyte
@@ -57,6 +56,8 @@ spec:
           - "--ysql_yb_enable_advisory_locks=true"
           - "--allowed_preview_flags_csv=ysql_yb_enable_advisory_locks"
           - "--yb_enable_read_committed_isolation=true"
+          # Rotate ordinary process logs before individual files become multi-gigabyte.
+          - "--max_log_size=100"
           # --- OPTIONAL flags (leave commented until you need them) ---
           # - "--enable_ysql=true"
           # - "--ysql_num_shards_per_tserver=2"
@@ -109,6 +110,28 @@ spec:
           periodSeconds: 20
           timeoutSeconds: 5
           failureThreshold: 6
+      - name: process-log-cleaner
+        image: yugabytedb/yugabyte@sha256:fee547e2f32d84ffe02287c01f5ba03921312d6c1e540b955e3599ca79f5160d
+        command: ["/bin/bash", "-c"]
+        args:
+          - |
+            log_dir="/mnt/data/yb-data/master/logs"
+            while true; do
+              if [[ -d "${log_dir}" ]]; then
+                find "${log_dir}" -xdev -type f -mmin +20160 -print -delete || true
+              fi
+              sleep 21600
+            done
+        resources:
+          requests:
+            cpu: "10m"
+            memory: "16Mi"
+          limits:
+            cpu: "100m"
+            memory: "64Mi"
+        volumeMounts:
+          - name: yb-master-data
+            mountPath: /mnt/data
   volumeClaimTemplates:
   - metadata:
       name: yb-master-data
@@ -395,7 +418,8 @@ spec:
   serviceName: yb-tserver-service
   replicas: 1
   updateStrategy:
-    type: RollingUpdate
+    type: OnDelete
+    rollingUpdate: null
   selector:
     matchLabels:
       app: yugabyte
