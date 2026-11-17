@@ -18,8 +18,7 @@ spec:
   podManagementPolicy: Parallel
   replicas: 1
   updateStrategy:
-    type: OnDelete
-    rollingUpdate: null
+    type: RollingUpdate
   selector:
     matchLabels:
       app: yugabyte
@@ -448,7 +447,8 @@ spec:
   serviceName: yb-tserver-service
   replicas: 1
   updateStrategy:
-    type: RollingUpdate
+    type: OnDelete
+    rollingUpdate: null
   selector:
     matchLabels:
       app: yugabyte
